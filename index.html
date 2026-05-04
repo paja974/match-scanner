@@ -1,1 +1,1904 @@
 
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>MATCH! Scanner — LEASECAR</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<style>
+  :root {
+    --bg-0: #0a0b0d; --bg-1: #111316; --bg-2: #1a1d22; --bg-3: #242830;
+    --line: #2d323b; --line-bright: #3d434e;
+    --text-0: #f4f5f7; --text-1: #c5c9d1; --text-2: #888d96; --text-3: #5a5f68;
+    --hi-vis: #ffd60a; --hi-vis-deep: #ff9f0a;
+    --signal-green: #34d399; --signal-red: #f87171; --signal-blue: #60a5fa;
+    /* Polices système iOS/Android — fiables, pas de dépendance réseau */
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%; overflow: hidden;
+    background: var(--bg-0); color: var(--text-0);
+    font-family: var(--font-display); font-size: 15px; line-height: 1.4;
+    -webkit-font-smoothing: antialiased; overscroll-behavior: none;
+  }
+  body {
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255, 214, 10, 0.06), transparent 70%), var(--bg-0);
+  }
+  .app {
+    position: relative; width: 100%; height: 100%;
+    max-width: 480px; margin: 0 auto;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .topbar {
+    flex-shrink: 0; padding: 14px 18px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-1); border-bottom: 1px solid var(--line);
+    z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 28px; height: 28px; background: var(--hi-vis); border-radius: 6px;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-weight: 800; font-size: 14px; color: var(--bg-0);
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1; }
+  .brand-name { font-family: var(--font-mono); font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+  .brand-sub { font-family: var(--font-mono); font-size: 9px; color: var(--text-3); margin-top: 3px; letter-spacing: 1px; }
+  .top-actions { display: flex; gap: 8px; align-items: center; }
+  .icon-btn {
+    width: 32px; height: 32px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px;
+    display: grid; place-items: center; cursor: pointer;
+    color: var(--text-1); font-family: var(--font-mono); font-size: 14px; font-weight: 700;
+  }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-2);
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .status-dot {
+    width: 7px; height: 7px; background: var(--signal-green); border-radius: 50%;
+    box-shadow: 0 0 6px var(--signal-green); animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .tabs { flex-shrink: 0; display: flex; background: var(--bg-1); border-bottom: 1px solid var(--line); }
+  .tab {
+    flex: 1; padding: 12px 8px; background: none; border: none;
+    color: var(--text-2); font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.8px; text-transform: uppercase; cursor: pointer;
+    position: relative; transition: color 0.2s;
+  }
+  .tab.active { color: var(--hi-vis); }
+  .tab.active::after {
+    content: ''; position: absolute; bottom: -1px; left: 20%; right: 20%;
+    height: 2px; background: var(--hi-vis);
+  }
+
+  .views { flex: 1; position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: none; }
+  .view.active { display: block; }
+  #view-scan.active { display: flex; flex-direction: column; }
+
+  #view-scan { background: #000; }
+  .camera-stage {
+    position: relative; width: 100%; flex: 1;
+    background: #000; overflow: hidden; min-height: 200px;
+  }
+  #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .camera-placeholder {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--text-2); font-family: var(--font-mono); font-size: 11px;
+    text-align: center; padding: 20px;
+    background: repeating-linear-gradient(45deg, transparent 0 14px, rgba(255,255,255,0.02) 14px 15px), var(--bg-1);
+  }
+
+  .engine-badge {
+    position: absolute; top: 12px; right: 12px;
+    padding: 6px 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    border-radius: 4px; font-family: var(--font-mono); font-size: 9px;
+    color: var(--hi-vis); letter-spacing: 1px; text-transform: uppercase; font-weight: 600;
+    border: 1px solid rgba(255,214,10,0.3); z-index: 5;
+  }
+  .engine-badge.fallback { color: var(--text-2); border-color: var(--line-bright); }
+
+  .scan-overlay { position: absolute; inset: 0; pointer-events: none; }
+  .scan-frame {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 78%; aspect-ratio: 4.5 / 1;
+    border: 2px solid var(--hi-vis); border-radius: 4px;
+    box-shadow: 0 0 0 99999px rgba(0,0,0,0.55), inset 0 0 12px rgba(255,214,10,0.2);
+  }
+  .scan-frame::before, .scan-frame::after {
+    content: ''; position: absolute; width: 18px; height: 18px;
+    border: 3px solid var(--hi-vis);
+  }
+  .scan-frame::before { top: -6px; left: -6px; border-right: none; border-bottom: none; }
+  .scan-frame::after { bottom: -6px; right: -6px; border-left: none; border-top: none; }
+  .scan-frame .corner-tr, .scan-frame .corner-bl {
+    position: absolute; width: 18px; height: 18px; border: 3px solid var(--hi-vis);
+  }
+  .scan-frame .corner-tr { top: -6px; right: -6px; border-left: none; border-bottom: none; }
+  .scan-frame .corner-bl { bottom: -6px; left: -6px; border-right: none; border-top: none; }
+  .scan-line {
+    position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--hi-vis), transparent);
+    box-shadow: 0 0 10px var(--hi-vis);
+    animation: scan-sweep 2.4s ease-in-out infinite; opacity: 0;
+  }
+  .scanning .scan-line { opacity: 1; }
+  @keyframes scan-sweep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(100% - 2px)); } }
+
+  .scan-hint {
+    position: absolute; top: 18px; left: 0; right: 0;
+    text-align: center; font-family: var(--font-mono); font-size: 10px;
+    color: var(--hi-vis); letter-spacing: 1.5px; text-transform: uppercase;
+    text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  }
+
+  .scan-controls {
+    padding: 14px; background: var(--bg-1); border-top: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .btn-primary {
+    width: 100%; padding: 14px;
+    background: var(--hi-vis); color: var(--bg-0); border: none; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+    transition: transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { background: var(--bg-3); color: var(--text-3); cursor: not-allowed; }
+  .btn-primary.scanning { background: var(--bg-3); color: var(--hi-vis); }
+
+  .btn-ghost {
+    width: 100%; padding: 12px; background: transparent;
+    color: var(--text-1); border: 1px solid var(--line-bright); border-radius: 8px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+  }
+  .manual-row { display: flex; gap: 8px; }
+  .manual-input {
+    flex: 1; padding: 12px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text-0); font-family: var(--font-mono); font-size: 16px;
+    font-weight: 700; letter-spacing: 2px; text-align: center;
+    text-transform: uppercase; outline: none;
+  }
+  .manual-input:focus { border-color: var(--hi-vis); }
+  .manual-input::placeholder { color: var(--text-3); letter-spacing: 1.5px; }
+  .btn-search {
+    padding: 0 18px; background: var(--bg-3); border: 1px solid var(--line-bright);
+    color: var(--hi-vis); border-radius: 8px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+
+  #view-result { background: var(--bg-0); }
+  .result-header { padding: 20px 18px 16px; background: var(--bg-1); border-bottom: 1px solid var(--line); }
+  .result-status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--signal-green); margin-bottom: 12px;
+  }
+  .result-status.error { color: var(--signal-red); }
+  .result-status .marker { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+
+  .plate {
+    display: inline-flex; align-items: stretch;
+    border-radius: 5px; overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.6);
+    font-family: var(--font-mono); margin-bottom: 4px;
+  }
+  .plate-band {
+    background: #003399; color: #ffcc00; padding: 8px 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    font-size: 8px; font-weight: 700;
+  }
+  .plate-band .stars { font-size: 10px; line-height: 1; }
+  .plate-band .country { font-size: 11px; }
+  .plate-number {
+    background: #f5f5f0; color: #111; padding: 10px 16px;
+    font-size: 24px; font-weight: 800; letter-spacing: 2px;
+  }
+
+  .vehicle-headline {
+    font-family: var(--font-display); font-size: 26px; font-weight: 700;
+    letter-spacing: -0.5px; margin-top: 8px; line-height: 1.15;
+  }
+  .vehicle-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-top: 4px; }
+
+  .ocr-meta { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .meta-chip {
+    font-family: var(--font-mono); font-size: 9px;
+    padding: 3px 7px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 3px; color: var(--text-2);
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .meta-chip strong { color: var(--text-0); margin-left: 4px; }
+
+  .status-bar { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+  .badge {
+    padding: 4px 8px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 4px;
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-1);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .badge.active { color: var(--signal-green); border-color: rgba(52, 211, 153, 0.4); }
+  .badge.warning { color: var(--hi-vis); border-color: rgba(255, 214, 10, 0.4); }
+  .badge.danger { color: var(--signal-red); border-color: rgba(248, 113, 113, 0.4); }
+
+  .section { padding: 18px; border-bottom: 1px solid var(--line); }
+  .section-title {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-3);
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .data-cell { display: flex; flex-direction: column; gap: 3px; }
+  .data-cell.full { grid-column: 1 / -1; }
+  .data-label {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 1px; text-transform: uppercase; color: var(--text-3);
+  }
+  .data-value { font-family: var(--font-mono); font-size: 14px; color: var(--text-0); font-weight: 500; }
+  .data-value.highlight { color: var(--hi-vis); font-weight: 700; }
+
+  .progress { margin-top: 10px; height: 4px; background: var(--bg-2); border-radius: 2px; overflow: hidden; }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, var(--signal-green), var(--hi-vis));
+    transition: width 0.6s ease;
+  }
+  .progress-meta {
+    display: flex; justify-content: space-between; margin-top: 6px;
+    font-family: var(--font-mono); font-size: 9px; color: var(--text-3);
+  }
+
+  .actions-row { padding: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .empty-state { padding: 60px 24px; text-align: center; }
+  .empty-icon { font-size: 36px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .empty-text { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); line-height: 1.6; }
+
+  .history-list { padding: 12px; }
+  .history-item {
+    display: flex; align-items: center; gap: 14px; padding: 14px;
+    background: var(--bg-1); border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s, transform 0.1s;
+  }
+  .history-item:active { transform: scale(0.99); }
+  .history-plate {
+    background: #f5f5f0; color: #111; padding: 6px 10px; border-radius: 4px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 800;
+    letter-spacing: 1.5px; flex-shrink: 0;
+  }
+  .history-info { flex: 1; min-width: 0; }
+  .history-model {
+    font-family: var(--font-display); font-weight: 600; font-size: 14px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .history-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+  .history-status {
+    font-family: var(--font-mono); font-size: 9px; padding: 3px 7px; border-radius: 3px;
+    text-transform: uppercase; font-weight: 600;
+  }
+  .history-status.found { background: rgba(52, 211, 153, 0.15); color: var(--signal-green); }
+  .history-status.not-found { background: rgba(248, 113, 113, 0.15); color: var(--signal-red); }
+
+  .toast {
+    position: fixed; bottom: 30px; left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--bg-3); color: var(--text-0);
+    padding: 12px 18px; border-radius: 8px; border: 1px solid var(--line-bright);
+    font-family: var(--font-mono); font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    transition: transform 0.3s ease; z-index: 1000;
+    max-width: 90%; text-align: center;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .ocr-progress {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    border-radius: 6px; padding: 8px 12px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--hi-vis);
+    display: none; z-index: 5;
+  }
+  .ocr-progress.show { display: block; }
+  .ocr-progress-bar { margin-top: 4px; height: 2px; background: rgba(255,214,10,0.2); border-radius: 1px; overflow: hidden; }
+  .ocr-progress-fill { height: 100%; background: var(--hi-vis); width: 0%; transition: width 0.3s; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+    z-index: 100; display: none;
+    align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--bg-1); border-top: 1px solid var(--line-bright);
+    border-radius: 16px 16px 0 0;
+    width: 100%; max-width: 480px;
+    padding: 24px 20px 32px; max-height: 85vh; overflow-y: auto;
+    animation: slideUp 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-handle { width: 36px; height: 4px; background: var(--line-bright); border-radius: 2px; margin: 0 auto 16px; }
+  .modal-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .modal-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-bottom: 22px; }
+
+  .field { margin-bottom: 18px; }
+  .field-label {
+    display: block; font-family: var(--font-mono); font-size: 10px;
+    color: var(--text-2); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .field-input, .field-select {
+    width: 100%; padding: 12px 14px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text-0); font-family: var(--font-mono); font-size: 13px; outline: none;
+  }
+  .field-input:focus, .field-select:focus { border-color: var(--hi-vis); }
+  .field-help { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+  .field-help a { color: var(--hi-vis); text-decoration: none; border-bottom: 1px dashed var(--hi-vis); }
+
+  .switch-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+  }
+  .switch-row:last-child { border-bottom: none; }
+  .switch-label { font-family: var(--font-display); font-size: 14px; font-weight: 500; }
+  .switch-desc { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+  .switch {
+    position: relative; width: 42px; height: 24px;
+    background: var(--bg-3); border-radius: 12px; border: 1px solid var(--line);
+    cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+  }
+  .switch.on { background: var(--hi-vis); border-color: var(--hi-vis); }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; background: var(--text-0); border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .switch.on::after { transform: translateX(18px); background: var(--bg-0); }
+
+  .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
+
+  .quota-display { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 10px; }
+  .quota-line { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; margin-bottom: 6px; }
+  .quota-bar { height: 4px; background: var(--bg-3); border-radius: 2px; overflow: hidden; }
+  .quota-fill { height: 100%; background: var(--hi-vis); transition: width 0.4s; }
+  .quota-fill.warning { background: var(--hi-vis-deep); }
+  .quota-fill.danger { background: var(--signal-red); }
+
+  #canvas { display: none; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">M!</div>
+      <div class="brand-text">
+        <div class="brand-name">MATCH! SCAN</div>
+        <div class="brand-sub" id="engineSubtitle">LEASECAR · OCR LOCAL</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        <span id="quotaPill">—</span>
+      </div>
+      <button class="icon-btn" id="btnSettings" title="Réglages">⚙</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="scan">Scanner</button>
+    <button class="tab" data-view="result">Fiche</button>
+    <button class="tab" data-view="appraisal">Reprise</button>
+    <button class="tab" data-view="history">Historique</button>
+  </nav>
+
+  <div class="views">
+
+    <section class="view active" id="view-scan">
+      <div class="camera-stage" id="cameraStage">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="engine-badge fallback" id="engineBadge">Tesseract local</div>
+        <div class="camera-placeholder" id="cameraPlaceholder">
+          Caméra non initialisée<br/>
+          <small style="color: var(--text-3); margin-top: 8px; display: block;">
+            Appuyez sur "Démarrer la caméra"
+          </small>
+        </div>
+        <div class="scan-overlay" id="scanOverlay" style="display:none">
+          <div class="scan-hint">Cadrer la plaque</div>
+          <div class="scan-frame">
+            <div class="corner-tr"></div>
+            <div class="corner-bl"></div>
+            <div class="scan-line"></div>
+          </div>
+        </div>
+        <div class="ocr-progress" id="ocrProgress">
+          <div id="ocrProgressText">Analyse OCR…</div>
+          <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocrProgressFill"></div></div>
+        </div>
+      </div>
+
+      <div class="scan-controls">
+        <button class="btn-primary" id="btnAction">
+          <span id="btnActionText">Démarrer la caméra</span>
+        </button>
+        <div class="manual-row">
+          <input type="text" class="manual-input" id="manualPlate" placeholder="AB-123-CD" maxlength="9" />
+          <button class="btn-search" id="btnManual">CHERCHER</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-result">
+      <div id="resultContent">
+        <div class="empty-state">
+          <div class="empty-icon">⊙</div>
+          <div class="empty-title">Aucun véhicule sélectionné</div>
+          <div class="empty-text">Scannez une plaque ou saisissez-la<br/>manuellement depuis l'onglet Scanner</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-appraisal">
+      <div id="appraisalContent">
+        <div style="padding: 18px 18px 0">
+          <div style="font-family: var(--font-display); font-size: 22px; font-weight: 700; margin-bottom: 4px">Évaluation de reprise</div>
+          <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-bottom: 18px">Calcul VR · Fourchette négo · Simulation LLD VO</div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Étape 1 · Identifier le véhicule</div>
+          <div class="manual-row" style="margin-bottom: 14px">
+            <input type="text" class="manual-input" id="appraisalPlate" placeholder="AB-123-CD" maxlength="9" />
+            <button class="btn-search" id="btnAppraisalLookup">REGCHECK</button>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); line-height: 1.5; margin-bottom: 8px">
+            Le bouton REGCHECK consomme 1 crédit sur ton compte regcheck.org.uk pour récupérer marque, modèle, énergie, date MEC.<br/>
+            Tu peux aussi saisir manuellement les champs ci-dessous.
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Étape 2 · Données véhicule</div>
+          <div class="data-grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="data-cell">
+              <label class="data-label">Marque</label>
+              <input type="text" class="field-input" id="ap_brand" placeholder="Renault" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Modèle</label>
+              <input type="text" class="field-input" id="ap_model" placeholder="Captur" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Énergie</label>
+              <select class="field-select" id="ap_energy">
+                <option value="ESSENCE">Essence</option>
+                <option value="DIESEL">Diesel</option>
+                <option value="HYBRIDE">Hybride</option>
+                <option value="ELECTRIQUE">Électrique</option>
+              </select>
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Année MEC</label>
+              <input type="number" class="field-input" id="ap_year" placeholder="2021" min="1990" max="2030" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Kilométrage actuel</label>
+              <input type="number" class="field-input" id="ap_km" placeholder="65000" min="0" max="500000" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Prix neuf catalogue TTC</label>
+              <input type="number" class="field-input" id="ap_price" placeholder="26000" min="0" />
+            </div>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 10px; line-height: 1.5">
+            💡 Le prix neuf est estimé automatiquement après lookup. Tu peux le corriger.
+          </div>
+        </div>
+
+        <div class="section" style="text-align: center">
+          <button class="btn-primary" id="btnComputeAppraisal" style="max-width: 280px; margin: 0 auto">
+            Calculer l'évaluation
+          </button>
+        </div>
+
+        <div id="appraisalResult"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-history">
+      <div class="history-list" id="historyList">
+        <div class="empty-state">
+          <div class="empty-icon">⊞</div>
+          <div class="empty-title">Aucun scan</div>
+          <div class="empty-text">L'historique des plaques scannées apparaîtra ici</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Réglages</div>
+    <div class="modal-subtitle">Moteur de reconnaissance & API</div>
+
+    <div class="field">
+      <label class="field-label">Token API Plate Recognizer</label>
+      <input type="password" class="field-input" id="apiToken" placeholder="abcdef123456…" autocomplete="off" />
+      <div class="field-help">
+        Active la reconnaissance haute précision (95%+). Free tier : 2500 lookups/mois sans CB.
+        Crée un compte sur <a href="https://platerecognizer.com" target="_blank">platerecognizer.com</a>
+        puis copie le token depuis le dashboard.
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Région des plaques</label>
+      <select class="field-select" id="apiRegion">
+        <option value="fr">France (toutes)</option>
+        <option value="">Auto-détection</option>
+      </select>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <div class="switch-label">Make / Model / Color</div>
+        <div class="switch-desc">+50% du coût · marque, modèle, couleur</div>
+      </div>
+      <div class="switch" id="switchMmc"></div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Mode strict région</label>
+      <div class="switch-row" style="border:none; padding: 0">
+        <div>
+          <div class="switch-label" style="font-size:12px">Mode strict région</div>
+          <div class="switch-desc">Rejette les plaques non-françaises</div>
+        </div>
+        <div class="switch" id="switchStrict"></div>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line)">
+      <label class="field-label">Username regcheck.org.uk (mode Reprise)</label>
+      <input type="text" class="field-input" id="regcheckUsername" placeholder="ton-username-regcheck" autocomplete="off" />
+      <div class="field-help">
+        Pour le mode <strong>Évaluation reprise</strong>. Compte gratuit sur
+        <a href="https://www.regcheck.org.uk" target="_blank">regcheck.org.uk</a>
+        avec 10 crédits offerts pour tester.
+      </div>
+    </div>
+
+    <div id="quotaWrap" style="display:none">
+      <label class="field-label" style="margin-top: 16px">Quota mensuel</label>
+      <div class="quota-display">
+        <div class="quota-line">
+          <span id="quotaUsed">—</span>
+          <span id="quotaTotal" style="color: var(--text-2)">—</span>
+        </div>
+        <div class="quota-bar"><div class="quota-fill" id="quotaFill" style="width: 0%"></div></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" id="btnTestApi">Tester</button>
+      <button class="btn-primary" id="btnSaveSettings" style="flex: 1.5">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+<div class="toast" id="toast"></div>
+
+<script>
+const MATCH_DB = {
+  'AB-123-CD': { plate: 'AB-123-CD', brand: 'Renault', model: 'Clio V', version: '1.0 TCe 90 Equilibre', energy: 'Essence', fuelColor: '#e8a845', color: 'Blanc Glacier', firstReg: '14/03/2024', vin: 'VF1RJB00X70123456', status: 'En location', statusType: 'active', customer: 'CABINET DUPONT & ASSOCIÉS', contractRef: 'LLD-2024-00831', contractStart: '15/03/2024', contractEnd: '14/03/2027', duration: '36 mois', monthlyRent: '289,00 €', currentKm: 28450, contractKm: 60000, residualValue: '8 920,00 €', nextMaintenance: '30 000 km', location: 'Saint-Denis (974)' },
+  'EF-456-GH': { plate: 'EF-456-GH', brand: 'Peugeot', model: '3008', version: 'Hybrid 225 GT', energy: 'Hybride', fuelColor: '#34d399', color: 'Gris Artense', firstReg: '02/09/2023', vin: 'VF3MCYHZRPS012345', status: 'En location', statusType: 'active', customer: 'TRANSPORTS PAYET SARL', contractRef: 'LLD-2023-00612', contractStart: '05/09/2023', contractEnd: '04/09/2026', duration: '36 mois', monthlyRent: '512,00 €', currentKm: 47820, contractKm: 90000, residualValue: '14 250,00 €', nextMaintenance: '50 000 km', location: 'Saint-Pierre (974)' },
+  'IJ-789-KL': { plate: 'IJ-789-KL', brand: 'Tesla', model: 'Model 3', version: 'Long Range AWD', energy: 'Électrique', fuelColor: '#60a5fa', color: 'Pearl White', firstReg: '21/06/2024', vin: 'LRW3F7FA1NC123456', status: 'Restitution prévue', statusType: 'warning', customer: 'IMMOBILIÈRE OCÉAN INDIEN', contractRef: 'LLD-2024-01024', contractStart: '25/06/2024', contractEnd: '24/06/2026', duration: '24 mois', monthlyRent: '745,00 €', currentKm: 31200, contractKm: 40000, residualValue: '28 100,00 €', nextMaintenance: 'Suivi OTA', location: 'Sainte-Marie (974)' },
+  'MN-321-OP': { plate: 'MN-321-OP', brand: 'Toyota', model: 'Hilux', version: '2.8 D-4D 204 Invincible', energy: 'Diesel', fuelColor: '#a78bfa', color: 'Noir Attitude', firstReg: '11/01/2023', vin: 'AHTFR22G609012345', status: 'En location', statusType: 'active', customer: 'BTP RÉUNION CONSTRUCTION', contractRef: 'LLD-2023-00188', contractStart: '15/01/2023', contractEnd: '14/01/2027', duration: '48 mois', monthlyRent: '658,00 €', currentKm: 89400, contractKm: 120000, residualValue: '19 800,00 €', nextMaintenance: '90 000 km', location: 'Le Port (974)' },
+  'QR-654-ST': { plate: 'QR-654-ST', brand: 'Citroën', model: 'C3', version: '1.2 PureTech 83 Plus', energy: 'Essence', fuelColor: '#e8a845', color: 'Rouge Elixir', firstReg: '08/11/2022', vin: 'VF7SXHMZ6NT123456', status: 'Sinistré', statusType: 'danger', customer: 'PARTICULIER · M. HOARAU', contractRef: 'LLD-2022-00945', contractStart: '12/11/2022', contractEnd: '11/11/2025', duration: '36 mois', monthlyRent: '215,00 €', currentKm: 54300, contractKm: 60000, residualValue: '6 450,00 €', nextMaintenance: 'En attente expertise', location: 'Saint-Paul (974)' },
+};
+
+// ============================================================
+// SIV_DB — DONNÉES SIMULÉES POUR LA DÉMO
+// Représente ce qu'une vraie API plaque (ex: immatriculationapi.com,
+// AAA-Data) renverrait pour des véhicules HORS flotte LEASECAR.
+// En prod, ces données viendraient d'un appel API.
+// ============================================================
+const SIV_DB = {
+  // === PROSPECTS chauds (en propriété, véhicules récents) ===
+  'AA-100-BB': {
+    plate: 'AA-100-BB',
+    brand: 'Volkswagen', model: 'Tiguan', version: '2.0 TDI 150 Life',
+    energy: 'Diesel', co2: 142, power: 110, fiscalPower: 8,
+    firstReg: '18/05/2021', age: 4.0,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne morale (SIREN renseigné)',
+    leadScore: 'A', leadReason: '4 ans = pic conversion LLD',
+  },
+  'CC-200-DD': {
+    plate: 'CC-200-DD',
+    brand: 'Audi', model: 'Q5', version: '40 TDI 204 S Line',
+    energy: 'Diesel', co2: 158, power: 150, fiscalPower: 11,
+    firstReg: '03/11/2020', age: 4.5,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne morale',
+    leadScore: 'A+', leadReason: 'Premium 4-5 ans, fort potentiel renouvellement',
+  },
+  'EE-300-FF': {
+    plate: 'EE-300-FF',
+    brand: 'Renault', model: 'Trafic', version: '2.0 dCi 150 L2H1',
+    energy: 'Diesel', co2: 195, power: 110, fiscalPower: 8,
+    firstReg: '22/02/2020', age: 5.2,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne morale',
+    leadScore: 'A', leadReason: 'VU pro >5 ans, candidat conversion LLD flotte',
+  },
+  // === DÉJÀ EN LLD ailleurs (à challenger au renouvellement) ===
+  'GG-400-HH': {
+    plate: 'GG-400-HH',
+    brand: 'BMW', model: 'X3', version: 'xDrive30e M Sport',
+    energy: 'Hybride rechargeable', co2: 49, power: 215, fiscalPower: 13,
+    firstReg: '12/09/2023', age: 1.6,
+    financingType: 'LLD', financingLabel: 'Location Longue Durée',
+    leaser: 'ARVAL France',
+    leadScore: 'B', leadReason: 'LLD ARVAL, à challenger au renouvellement (2026)',
+  },
+  'II-500-JJ': {
+    plate: 'II-500-JJ',
+    brand: 'Peugeot', model: '508', version: 'PSE Hybrid 360',
+    energy: 'Hybride rechargeable', co2: 46, power: 265, fiscalPower: 12,
+    firstReg: '28/04/2022', age: 3.0,
+    financingType: 'LLD', financingLabel: 'Location Longue Durée',
+    leaser: 'ALD Automotive',
+    leadScore: 'B+', leadReason: 'LLD ALD fin 2025, contact 6 mois avant',
+  },
+  // === PROSPECTS tièdes (LCB, LCL = location courte/avec option d'achat) ===
+  'KK-600-LL': {
+    plate: 'KK-600-LL',
+    brand: 'Mercedes', model: 'Classe C', version: '220d AMG Line',
+    energy: 'Diesel', co2: 138, power: 147, fiscalPower: 9,
+    firstReg: '15/07/2022', age: 2.8,
+    financingType: 'LCB', financingLabel: 'Location avec option d\'achat',
+    leaser: 'Mercedes-Benz Financial',
+    leadScore: 'C', leadReason: 'LOA, propriétaire potentiel à fin de contrat',
+  },
+  // === PROSPECT FROID (véhicule trop récent ou trop vieux) ===
+  'MM-700-NN': {
+    plate: 'MM-700-NN',
+    brand: 'Dacia', model: 'Sandero', version: '1.0 SCe 65 Essential',
+    energy: 'Essence', co2: 122, power: 49, fiscalPower: 4,
+    firstReg: '04/11/2024', age: 0.5,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne physique',
+    leadScore: 'D', leadReason: 'Véhicule trop récent, à recontacter dans 3 ans',
+  },
+};
+
+// ============================================================
+// GRILLE VR LEASECAR — Calibrée sur sources constructeurs réelles
+// (Renault 08/2022, Dacia 03/2023, Groupe Caille 05+10/2024)
+// VR exprimée en % du prix catalogue TTC HORS carte grise
+// Lignes = durée (mois) · Colonnes = km (×1000)
+// ============================================================
+const VR_KM_COLS = [10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120];
+const VR_DURATIONS = [12,18,24,30,36,48,60];
+
+const VR_GRID = {
+  ESSENCE: {
+    12: [60,59,58,56,55,54,54,53,52,50,49,48,47,45,43,42,40,38,35,32,29,27,26],
+    18: [58,57,56,54,53,52,51,50,49,48,47,46,45,43,41,40,38,36,33,31,30,29,29],
+    24: [57,56,55,53,52,50,49,48,47,46,45,44,42,40,37,35,33,30,27,25,23,22,21],
+    30: [53,52,51,50,49,48,47,46,45,44,43,42,41,40,37,35,32,29,26,24,23,22,22],
+    36: [48,47,46,47,47,47,47,45,43,41,40,39,37,35,30,28,26,24,22,20,18,17,17],
+    48: [42,41,40,41,41,41,42,40,38,37,36,35,33,31,26,24,22,21,19,18,17,16,15],
+    60: [34,33,32,32,32,32,32,31,31,31,31,31,30,30,24,22,20,19,18,17,16,14,12],
+  },
+  DIESEL: {
+    12: [57,56,55,53,52,51,50,49,48,48,47,46,45,43,40,38,36,34,32,30,27,25,24],
+    18: [55,54,53,52,50,49,49,48,47,46,46,45,44,42,40,38,37,35,34,32,29,27,27],
+    24: [57,56,55,54,53,52,51,51,50,49,48,47,46,45,42,40,38,35,32,29,27,26,25],
+    30: [49,48,47,46,46,45,45,44,43,42,41,40,40,39,36,34,32,30,28,26,25,24,24],
+    36: [45,44,43,44,44,44,45,43,41,40,39,38,37,35,32,30,28,26,24,22,20,19,18],
+    48: [39,38,37,38,38,38,39,37,35,34,33,32,30,28,25,23,22,20,18,17,16,15,14],
+    60: [32,31,30,30,30,30,30,29,29,29,29,29,28,28,23,21,19,18,17,16,15,13,11],
+  },
+};
+// Hybride = moyenne Essence/Diesel
+VR_GRID.HYBRIDE = {};
+VR_DURATIONS.forEach(d => {
+  VR_GRID.HYBRIDE[d] = VR_GRID.ESSENCE[d].map((v, i) => Math.round((v + VR_GRID.DIESEL[d][i]) / 2));
+});
+// Électrique = Essence -10% (volatilité batterie + risque techno)
+VR_GRID.ELECTRIQUE = {};
+VR_DURATIONS.forEach(d => {
+  VR_GRID.ELECTRIQUE[d] = VR_GRID.ESSENCE[d].map(v => Math.max(8, v - 10));
+});
+
+// Mapping énergie API → clé grille
+const ENERGY_MAP = {
+  'essence': 'ESSENCE', 'gasoline': 'ESSENCE', 'petrol': 'ESSENCE', 'sp': 'ESSENCE',
+  'diesel': 'DIESEL', 'gazole': 'DIESEL', 'go': 'DIESEL',
+  'hybride': 'HYBRIDE', 'hybrid': 'HYBRIDE', 'hybride rechargeable': 'HYBRIDE', 'phev': 'HYBRIDE', 'hev': 'HYBRIDE',
+  'electrique': 'ELECTRIQUE', 'electric': 'ELECTRIQUE', 'ev': 'ELECTRIQUE', 'bev': 'ELECTRIQUE',
+};
+function normalizeEnergy(raw) {
+  if (!raw) return 'ESSENCE';
+  const k = raw.toLowerCase().trim();
+  for (const [pattern, val] of Object.entries(ENERGY_MAP)) {
+    if (k.includes(pattern)) return val;
+  }
+  return 'ESSENCE';
+}
+
+// Interpolation bi-linéaire dans la grille VR
+function interpolateVR(energy, durationMonths, kmThousands) {
+  const grid = VR_GRID[energy] || VR_GRID.ESSENCE;
+  // Clamp values
+  const d = Math.max(VR_DURATIONS[0], Math.min(VR_DURATIONS[VR_DURATIONS.length - 1], durationMonths));
+  const k = Math.max(VR_KM_COLS[0], Math.min(VR_KM_COLS[VR_KM_COLS.length - 1], kmThousands));
+
+  // Find duration bracket
+  let d1 = VR_DURATIONS[0], d2 = VR_DURATIONS[VR_DURATIONS.length - 1];
+  for (let i = 0; i < VR_DURATIONS.length - 1; i++) {
+    if (d >= VR_DURATIONS[i] && d <= VR_DURATIONS[i+1]) {
+      d1 = VR_DURATIONS[i]; d2 = VR_DURATIONS[i+1]; break;
+    }
+  }
+  // Find km bracket
+  let k1Idx = 0, k2Idx = VR_KM_COLS.length - 1;
+  for (let i = 0; i < VR_KM_COLS.length - 1; i++) {
+    if (k >= VR_KM_COLS[i] && k <= VR_KM_COLS[i+1]) {
+      k1Idx = i; k2Idx = i+1; break;
+    }
+  }
+  const k1 = VR_KM_COLS[k1Idx], k2 = VR_KM_COLS[k2Idx];
+
+  // Bi-linear interpolation
+  const v_d1k1 = grid[d1][k1Idx];
+  const v_d1k2 = grid[d1][k2Idx];
+  const v_d2k1 = grid[d2][k1Idx];
+  const v_d2k2 = grid[d2][k2Idx];
+
+  const tk = k2 === k1 ? 0 : (k - k1) / (k2 - k1);
+  const td = d2 === d1 ? 0 : (d - d1) / (d2 - d1);
+
+  const v_d1 = v_d1k1 + (v_d1k2 - v_d1k1) * tk;
+  const v_d2 = v_d2k1 + (v_d2k2 - v_d2k1) * tk;
+  const vr = v_d1 + (v_d2 - v_d1) * td;
+  return vr; // % VR
+}
+
+// Estimation prix catalogue par modèle (table de référence indicative)
+// En prod, viendra de l'API ou d'une base interne LEASECAR
+const PRICE_LIST = {
+  // marque modèle (lowercase) → prix neuf catalogue moyen TTC en €
+  'renault clio': 22000, 'renault captur': 26000, 'renault megane': 30000, 'renault arkana': 33000,
+  'renault scenic': 35000, 'renault trafic': 38000, 'renault master': 45000, 'renault kangoo': 28000,
+  'peugeot 208': 22000, 'peugeot 2008': 27000, 'peugeot 308': 30000, 'peugeot 3008': 38000,
+  'peugeot 5008': 42000, 'peugeot 508': 45000, 'peugeot partner': 28000, 'peugeot expert': 38000,
+  'citroen c3': 19000, 'citroen c4': 25000, 'citroen berlingo': 27000, 'citroen jumpy': 36000,
+  'dacia sandero': 14000, 'dacia duster': 20000, 'dacia jogger': 19000, 'dacia spring': 18000,
+  'volkswagen polo': 23000, 'volkswagen golf': 30000, 'volkswagen tiguan': 42000, 'volkswagen passat': 45000,
+  'volkswagen t-roc': 32000, 'volkswagen id.3': 40000, 'volkswagen id.4': 48000,
+  'toyota yaris': 22000, 'toyota corolla': 30000, 'toyota rav4': 42000, 'toyota chr': 32000,
+  'toyota hilux': 45000, 'toyota proace': 38000,
+  'bmw serie 1': 35000, 'bmw serie 3': 50000, 'bmw x1': 45000, 'bmw x3': 60000, 'bmw i4': 65000,
+  'audi a3': 35000, 'audi a4': 48000, 'audi q3': 45000, 'audi q5': 60000, 'audi etron': 75000,
+  'mercedes classe a': 35000, 'mercedes classe c': 50000, 'mercedes classe e': 65000,
+  'mercedes glc': 60000, 'mercedes vito': 45000, 'mercedes sprinter': 50000,
+  'tesla model 3': 45000, 'tesla model y': 50000,
+  'fiat 500': 18000, 'fiat 500e': 28000, 'fiat panda': 16000, 'fiat ducato': 40000,
+  'kia picanto': 16000, 'kia sportage': 35000, 'kia niro': 35000, 'kia ev6': 50000,
+  'hyundai i20': 20000, 'hyundai tucson': 36000, 'hyundai kona': 30000, 'hyundai ioniq 5': 50000,
+  'opel corsa': 21000, 'opel mokka': 28000, 'opel astra': 30000, 'opel vivaro': 36000,
+  'ford fiesta': 22000, 'ford focus': 28000, 'ford kuga': 38000, 'ford transit': 45000,
+};
+
+function estimatePrice(brand, model) {
+  if (!brand || !model) return null;
+  const key = `${brand} ${model}`.toLowerCase().trim();
+  if (PRICE_LIST[key]) return PRICE_LIST[key];
+  // Fuzzy: match on brand only
+  const brandKey = brand.toLowerCase();
+  const matches = Object.keys(PRICE_LIST).filter(k => k.startsWith(brandKey));
+  if (matches.length > 0) {
+    const avg = matches.reduce((s, k) => s + PRICE_LIST[k], 0) / matches.length;
+    return Math.round(avg / 1000) * 1000;
+  }
+  return null;
+}
+
+// Compute full appraisal
+function computeAppraisal({ priceNew, energy, ageYears, kmCurrent }) {
+  const e = normalizeEnergy(energy);
+  const durationMonths = Math.max(12, Math.round(ageYears * 12));
+  const kmK = Math.max(10, Math.round(kmCurrent / 1000));
+
+  const vrPercent = interpolateVR(e, durationMonths, kmK);
+  const vrTheo = Math.round((priceNew * vrPercent / 100) / 100) * 100;
+
+  // Fourchette négociation
+  const repriseLow = Math.round((vrTheo * 0.90) / 100) * 100;
+  const repriseRecom = vrTheo;
+  const repriseHigh = Math.round((vrTheo * 1.05) / 100) * 100;
+
+  // Simulation LLD VO si re-loué (24 mois / 30 000 km supplémentaires)
+  const reloueDurMois = 24;
+  const reloueKmTotal = kmCurrent + 30000;
+  const vrFinPct = interpolateVR(e, durationMonths + reloueDurMois, Math.round(reloueKmTotal / 1000));
+  const vrFinEur = Math.round((priceNew * vrFinPct / 100) / 100) * 100;
+  const amortissement = Math.max(0, vrTheo - vrFinEur);
+  const taux = 0.058; // 5.8% taux LLD VO indicatif Réunion
+  const fraisFin = Math.round(((vrTheo + vrFinEur) / 2) * taux * (reloueDurMois / 12));
+  const totalFin = amortissement + fraisFin;
+  const loyerFinHT = Math.round(totalFin / reloueDurMois);
+  const entretien = e === 'ELECTRIQUE' ? 25 : 45;
+  const loyerTotalHT = loyerFinHT + entretien;
+
+  return {
+    energy: e, vrPercent: Math.round(vrPercent * 10) / 10,
+    vrTheo, repriseLow, repriseRecom, repriseHigh,
+    durationMonths, kmK,
+    relou: {
+      durMois: reloueDurMois, kmTotal: reloueKmTotal,
+      vrFinPct: Math.round(vrFinPct * 10) / 10, vrFinEur,
+      amortissement, fraisFin, totalFin,
+      loyerFinHT, entretien, loyerTotalHT,
+    },
+  };
+}
+
+
+const STORAGE_KEY = 'matchScannerSettings_v1';
+const state = { stream: null, scanning: false, history: [], worker: null, settings: loadSettings(), quota: null };
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', ...JSON.parse(raw) };
+  } catch (e) {}
+  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '' };
+}
+function saveSettings() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings)); } catch (e) {}
+}
+
+const el = (id) => document.getElementById(id);
+function toast(msg, duration = 2400) {
+  const t = el('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), duration);
+}
+function switchView(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${name}`));
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchView(t.dataset.view)));
+
+function refreshEngineUi() {
+  const badge = el('engineBadge');
+  const subtitle = el('engineSubtitle');
+  if (state.settings.token) {
+    badge.textContent = 'Plate Recognizer';
+    badge.classList.remove('fallback');
+    subtitle.textContent = 'LEASECAR · MOTEUR API';
+  } else {
+    badge.textContent = 'Tesseract local';
+    badge.classList.add('fallback');
+    subtitle.textContent = 'LEASECAR · OCR LOCAL';
+  }
+  refreshQuotaPill();
+}
+function refreshQuotaPill() {
+  const pill = el('quotaPill');
+  if (!state.settings.token) { pill.textContent = 'Local'; return; }
+  if (!state.quota) { pill.textContent = 'API'; return; }
+  const remaining = state.quota.max - state.quota.used;
+  pill.textContent = `${remaining}/${state.quota.max}`;
+}
+
+const PLATE_REGEX_SIV = /([A-Z]{2})[\s\-]?(\d{3})[\s\-]?([A-Z]{2})/;
+function normalizePlate(raw) {
+  if (!raw) return null;
+  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const siv = cleaned.match(/^([A-Z]{2})(\d{3})([A-Z]{2})$/);
+  if (siv) return `${siv[1]}-${siv[2]}-${siv[3]}`;
+  const m = raw.toUpperCase().match(PLATE_REGEX_SIV);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+function extractPlateFromText(text) {
+  if (!text) return null;
+  const cleaned = text.toUpperCase().replace(/[^A-Z0-9\s\-]/g, ' ');
+  const siv = cleaned.match(PLATE_REGEX_SIV);
+  if (siv) return `${siv[1]}-${siv[2]}-${siv[3]}`;
+  const compact = cleaned.replace(/\s/g, '').match(/([A-Z]{2})(\d{3})([A-Z]{2})/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  return null;
+}
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    state.stream = stream;
+    el('video').srcObject = stream;
+    el('cameraPlaceholder').style.display = 'none';
+    el('scanOverlay').style.display = 'block';
+    return true;
+  } catch (err) {
+    console.error('Camera error:', err);
+    toast('Caméra inaccessible. Utilisez la saisie manuelle.', 3500);
+    return false;
+  }
+}
+function stopCamera() {
+  if (state.stream) { state.stream.getTracks().forEach(t => t.stop()); state.stream = null; }
+}
+
+async function captureAndScan() {
+  if (!state.stream) { toast('Caméra non disponible'); return; }
+  state.scanning = true;
+  el('cameraStage').classList.add('scanning');
+  el('btnAction').classList.add('scanning');
+  el('btnActionText').textContent = 'Analyse en cours…';
+  el('btnAction').disabled = true;
+  el('ocrProgress').classList.add('show');
+
+  try {
+    const blob = await captureFrameBlob();
+    let result;
+    if (state.settings.token) {
+      el('ocrProgressText').textContent = 'Plate Recognizer · envoi…';
+      el('ocrProgressFill').style.width = '40%';
+      result = await scanWithPlateRecognizer(blob);
+    } else {
+      el('ocrProgressText').textContent = 'Tesseract local…';
+      result = await scanWithTesseract(blob);
+    }
+    if (result && result.plate) {
+      toast(`Plaque : ${result.plate}${result.confidence ? ' · ' + Math.round(result.confidence * 100) + '%' : ''}`);
+      lookupPlate(result.plate, result);
+    } else {
+      toast('Plaque non détectée. Réessayez.', 3000);
+    }
+  } catch (err) {
+    console.error('Scan error:', err);
+    toast(err.message || 'Erreur de scan', 3500);
+  } finally {
+    state.scanning = false;
+    el('cameraStage').classList.remove('scanning');
+    el('btnAction').classList.remove('scanning');
+    el('btnAction').disabled = false;
+    el('btnActionText').textContent = 'Scanner la plaque';
+    el('ocrProgress').classList.remove('show');
+    el('ocrProgressFill').style.width = '0%';
+  }
+}
+
+async function captureFrameBlob() {
+  const video = el('video');
+  const canvas = el('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+  return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+}
+
+async function scanWithPlateRecognizer(blob) {
+  const fd = new FormData();
+  fd.append('upload', blob, 'frame.jpg');
+  if (state.settings.region) fd.append('regions', state.settings.region);
+  if (state.settings.mmc) fd.append('mmc', 'true');
+  const config = {};
+  if (state.settings.strict && state.settings.region) config.region = 'strict';
+  if (Object.keys(config).length) fd.append('config', JSON.stringify(config));
+
+  el('ocrProgressFill').style.width = '70%';
+
+  const resp = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
+    method: 'POST',
+    headers: { 'Authorization': `Token ${state.settings.token}` },
+    body: fd
+  });
+
+  if (resp.status === 401 || resp.status === 403) throw new Error('Token API invalide');
+  if (resp.status === 429) throw new Error('Quota API dépassé');
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error(`Erreur API ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  el('ocrProgressFill').style.width = '100%';
+  console.log('Plate Recognizer response:', data);
+
+  if (data.usage) {
+    state.quota = { used: data.usage.calls, max: data.usage.max_calls };
+    refreshQuotaPill();
+    refreshQuotaDisplay();
+  }
+
+  if (!data.results || data.results.length === 0) return null;
+  const best = data.results.reduce((a, b) => (a.score >= b.score ? a : b));
+
+  const out = {
+    plate: normalizePlate(best.plate) || best.plate.toUpperCase(),
+    confidence: best.score,
+    region: best.region && best.region.code,
+    source: 'platerecognizer',
+  };
+  if (best.vehicle && best.vehicle.props) {
+    const props = best.vehicle.props;
+    if (props.make_model && props.make_model[0]) out.makeModel = props.make_model[0].value;
+    if (props.color && props.color[0]) out.color = props.color[0].value;
+    if (props.orientation && props.orientation[0]) out.orientation = props.orientation[0].value;
+  }
+  if (best.vehicle && best.vehicle.type) out.vehicleType = best.vehicle.type;
+  return out;
+}
+
+async function scanWithTesseract(blob) {
+  const img = await blobToImage(blob);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const cropW = img.width * 0.78;
+  const cropH = cropW / 4.5;
+  const cropX = (img.width - cropW) / 2;
+  const cropY = (img.height - cropH) / 2;
+  canvas.width = cropW;
+  canvas.height = cropH;
+  ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  const imgData = ctx.getImageData(0, 0, cropW, cropH);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+    const v = avg > 130 ? 255 : (avg < 80 ? 0 : avg);
+    d[i] = d[i+1] = d[i+2] = v;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  if (!state.worker) {
+    el('ocrProgressText').textContent = 'Init OCR…';
+    state.worker = await Tesseract.createWorker('eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          el('ocrProgressFill').style.width = (m.progress * 100) + '%';
+          el('ocrProgressText').textContent = `Lecture… ${Math.round(m.progress * 100)}%`;
+        }
+      }
+    });
+    await state.worker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-' });
+  }
+  const { data } = await state.worker.recognize(canvas);
+  const plate = extractPlateFromText(data.text);
+  return plate ? { plate, confidence: (data.confidence || 0) / 100, source: 'tesseract' } : null;
+}
+
+function blobToImage(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+function lookupPlate(plate, scanMeta = {}) {
+  const normalized = normalizePlate(plate);
+  if (!normalized) { toast('Format de plaque invalide'); return; }
+  const vehicle = MATCH_DB[normalized];
+  const sivData = SIV_DB[normalized];
+
+  let resultType = 'not-found';
+  let modelLabel = scanMeta.makeModel || 'Non référencé';
+  if (vehicle) {
+    resultType = 'match';
+    modelLabel = `${vehicle.brand} ${vehicle.model}`;
+  } else if (sivData) {
+    resultType = 'siv';
+    modelLabel = `${sivData.brand} ${sivData.model}`;
+  }
+
+  state.history.unshift({
+    plate: normalized,
+    found: !!vehicle,
+    sivFound: !!sivData,
+    resultType,
+    model: modelLabel,
+    timestamp: new Date(),
+    data: vehicle,
+    sivData,
+    scanMeta,
+  });
+  if (state.history.length > 30) state.history.pop();
+  renderHistory();
+
+  if (vehicle) renderResult(vehicle, scanMeta);
+  else if (sivData) renderSivProspect(sivData, scanMeta);
+  else renderNotFound(normalized, scanMeta);
+  switchView('result');
+}
+
+function metaChips(scanMeta) {
+  const chips = [];
+  if (scanMeta.source === 'platerecognizer') chips.push('<div class="meta-chip">Source: <strong>API</strong></div>');
+  else if (scanMeta.source === 'tesseract') chips.push('<div class="meta-chip">Source: <strong>OCR local</strong></div>');
+  else if (scanMeta.source === 'manual') chips.push('<div class="meta-chip">Source: <strong>Manuel</strong></div>');
+  if (scanMeta.confidence) chips.push(`<div class="meta-chip">Confiance: <strong>${Math.round(scanMeta.confidence * 100)}%</strong></div>`);
+  if (scanMeta.makeModel) chips.push(`<div class="meta-chip">Vu: <strong>${scanMeta.makeModel}</strong></div>`);
+  return chips;
+}
+
+function renderResult(v, scanMeta = {}) {
+  const usagePercent = Math.min(100, Math.round((v.currentKm / v.contractKm) * 100));
+  let badgeClass = 'active';
+  if (v.statusType === 'warning') badgeClass = 'warning';
+  if (v.statusType === 'danger') badgeClass = 'danger';
+  const chips = metaChips(scanMeta);
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status">
+        <div class="marker"></div>
+        <span>Véhicule identifié · MATCH! DB</span>
+      </div>
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${v.plate}</div>
+      </div>
+      <div class="vehicle-headline">${v.brand} ${v.model}</div>
+      <div class="vehicle-sub">${v.version} · ${v.color}</div>
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+      <div class="status-bar">
+        <div class="badge ${badgeClass}"><div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>${v.status}</div>
+        <div class="badge" style="color: ${v.fuelColor}; border-color: ${v.fuelColor}40">${v.energy}</div>
+        <div class="badge">${v.location}</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Contrat LLD</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Référence</div><div class="data-value highlight">${v.contractRef}</div></div>
+        <div class="data-cell"><div class="data-label">Durée</div><div class="data-value">${v.duration}</div></div>
+        <div class="data-cell full"><div class="data-label">Locataire</div><div class="data-value">${v.customer}</div></div>
+        <div class="data-cell"><div class="data-label">Début</div><div class="data-value">${v.contractStart}</div></div>
+        <div class="data-cell"><div class="data-label">Fin prévue</div><div class="data-value">${v.contractEnd}</div></div>
+        <div class="data-cell"><div class="data-label">Loyer mensuel</div><div class="data-value highlight">${v.monthlyRent}</div></div>
+        <div class="data-cell"><div class="data-label">Valeur résiduelle</div><div class="data-value">${v.residualValue}</div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Kilométrage</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Compteur</div><div class="data-value highlight">${v.currentKm.toLocaleString('fr-FR')} km</div></div>
+        <div class="data-cell"><div class="data-label">Plafond contrat</div><div class="data-value">${v.contractKm.toLocaleString('fr-FR')} km</div></div>
+      </div>
+      <div class="progress"><div class="progress-fill" style="width: ${usagePercent}%"></div></div>
+      <div class="progress-meta">
+        <span>${usagePercent}% utilisé</span>
+        <span>Prochain entretien : ${v.nextMaintenance}</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Identification technique</div>
+      <div class="data-grid">
+        <div class="data-cell full"><div class="data-label">VIN</div><div class="data-value">${v.vin}</div></div>
+        <div class="data-cell"><div class="data-label">1ère immatriculation</div><div class="data-value">${v.firstReg}</div></div>
+        <div class="data-cell"><div class="data-label">Énergie</div><div class="data-value">${v.energy}</div></div>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="btn-ghost">📞 Locataire</button>
+      <button class="btn-ghost">📋 Voir contrat</button>
+    </div>
+  `;
+}
+
+// Translation maps for Plate Recognizer raw values
+const TYPE_FR = {
+  'Sedan': 'Berline',
+  'SUV': 'SUV',
+  'Big Truck': 'Poids lourd',
+  'Bus': 'Bus / Car',
+  'Motorcycle': 'Moto',
+  'Pickup Truck': 'Pick-up',
+  'Van': 'Utilitaire',
+  'Unknown': 'Inconnu',
+};
+const COLOR_FR = {
+  'black': 'Noir',
+  'white': 'Blanc',
+  'silver': 'Gris argent',
+  'gray': 'Gris',
+  'red': 'Rouge',
+  'blue': 'Bleu',
+  'green': 'Vert',
+  'yellow': 'Jaune',
+  'brown': 'Marron',
+  'orange': 'Orange',
+  'beige': 'Beige',
+  'unknown': '—',
+};
+const COLOR_HEX = {
+  'black': '#1a1a1a', 'white': '#f5f5f0', 'silver': '#c0c4c8', 'gray': '#7a7e85',
+  'red': '#dc3545', 'blue': '#1e6fdc', 'green': '#28a745', 'yellow': '#ffc107',
+  'brown': '#8b5a2b', 'orange': '#fd7e14', 'beige': '#d4b896',
+};
+
+// Rough VR / loyer estimation based on detected type — gives an indicative range
+// Calibrated for La Réunion LLD market — to refine with real LEASECAR data
+const VR_ESTIMATES = {
+  'Sedan':         { vrMin: 6000,  vrMax: 18000, rentMin: 250, rentMax: 550 },
+  'SUV':           { vrMin: 10000, vrMax: 28000, rentMin: 380, rentMax: 850 },
+  'Pickup Truck':  { vrMin: 12000, vrMax: 25000, rentMin: 450, rentMax: 750 },
+  'Van':           { vrMin: 8000,  vrMax: 20000, rentMin: 320, rentMax: 600 },
+  'Big Truck':     { vrMin: 15000, vrMax: 50000, rentMin: 600, rentMax: 1500 },
+  'Bus':           { vrMin: 20000, vrMax: 60000, rentMin: 800, rentMax: 1800 },
+  'Motorcycle':    { vrMin: 2000,  vrMax: 8000,  rentMin: 120, rentMax: 280 },
+};
+
+function fmtEur(n) {
+  return n.toLocaleString('fr-FR') + ' €';
+}
+
+// ============================================================
+// renderSivProspect — Fiche prospect (véhicule HORS flotte avec données SIV)
+// ============================================================
+function renderSivProspect(siv, scanMeta = {}) {
+  const chips = metaChips(scanMeta);
+
+  // Lead scoring colors
+  const scoreColor = {
+    'A+': 'var(--signal-green)',
+    'A':  'var(--signal-green)',
+    'B+': 'var(--hi-vis)',
+    'B':  'var(--hi-vis)',
+    'C':  'var(--hi-vis-deep)',
+    'D':  'var(--text-3)',
+  }[siv.leadScore] || 'var(--text-2)';
+
+  // Status type by financing
+  let statusBadge = '';
+  if (siv.financingType === 'PROPRIETE') {
+    statusBadge = `<div class="badge active">
+      <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+      ${siv.financingLabel} · PROSPECT
+    </div>`;
+  } else if (siv.financingType === 'LLD') {
+    statusBadge = `<div class="badge warning">
+      <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+      ${siv.financingLabel} · ${siv.leaser}
+    </div>`;
+  } else {
+    statusBadge = `<div class="badge">
+      <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+      ${siv.financingLabel}
+    </div>`;
+  }
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status warning">
+        <div class="marker"></div>
+        <span>Hors flotte · Données SIV simulées</span>
+      </div>
+
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${siv.plate}</div>
+      </div>
+
+      <div class="vehicle-headline">${siv.brand} ${siv.model}</div>
+      <div class="vehicle-sub">${siv.version}</div>
+
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+
+      <div class="status-bar">
+        ${statusBadge}
+        <div class="badge">${siv.energy}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Score commercial</div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px;background:var(--bg-2);border:1px solid ${scoreColor}40;border-radius:8px">
+        <div style="width:54px;height:54px;border-radius:50%;background:${scoreColor};display:grid;place-items:center;font-family:var(--font-mono);font-size:22px;font-weight:800;color:var(--bg-0)">
+          ${siv.leadScore}
+        </div>
+        <div style="flex:1">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">
+            Recommandation
+          </div>
+          <div style="font-family:var(--font-display);font-size:14px;color:var(--text-0);line-height:1.4">
+            ${siv.leadReason}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Identification SIV</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Type financement</div><div class="data-value highlight">${siv.financingType}</div></div>
+        <div class="data-cell"><div class="data-label">Âge</div><div class="data-value">${siv.age} ans</div></div>
+        <div class="data-cell full"><div class="data-label">${siv.financingType === 'PROPRIETE' ? 'Titulaire' : 'Loueur'}</div><div class="data-value">${siv.owner || siv.leaser || '—'}</div></div>
+        <div class="data-cell"><div class="data-label">1ère MEC</div><div class="data-value">${siv.firstReg}</div></div>
+        <div class="data-cell"><div class="data-label">Énergie</div><div class="data-value">${siv.energy}</div></div>
+        <div class="data-cell"><div class="data-label">Puissance fiscale</div><div class="data-value">${siv.fiscalPower} CV</div></div>
+        <div class="data-cell"><div class="data-label">Puissance réelle</div><div class="data-value">${siv.power} kW</div></div>
+        <div class="data-cell full"><div class="data-label">Émission CO2</div><div class="data-value">${siv.co2} g/km</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Action commerciale</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        ${siv.financingType === 'PROPRIETE'
+          ? `<button class="btn-primary" style="background: var(--signal-green); color: var(--bg-0)" onclick="window.toast && window.toast('Lead ajouté au CRM (démo)')">📞 Approcher ce prospect</button>`
+          : `<button class="btn-primary" onclick="window.toast && window.toast('Suivi planifié 6 mois avant fin LLD')">⏰ Planifier suivi fin de contrat</button>`
+        }
+        <button class="btn-ghost" onclick="window.toast && window.toast('Fiche exportée vers MATCH! Prospects')">➕ Ajouter à MATCH! Prospects</button>
+        <button class="btn-ghost">📸 Photographier le véhicule</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderNotFound(plate, scanMeta = {}) {
+  const chips = metaChips(scanMeta);
+  const hasMmc = scanMeta.makeModel || scanMeta.color || scanMeta.vehicleType;
+  const hasApiSource = scanMeta.source === 'platerecognizer';
+
+  // ============ HEADER ============
+  // If we have a make/model, surface it as the headline
+  const headline = scanMeta.makeModel
+    ? scanMeta.makeModel
+    : 'Véhicule détecté';
+  const sub = scanMeta.color || scanMeta.vehicleType
+    ? `${(COLOR_FR[scanMeta.color] || scanMeta.color || '').trim()}${scanMeta.color && scanMeta.vehicleType ? ' · ' : ''}${TYPE_FR[scanMeta.vehicleType] || ''}`.trim().replace(/^·\s*/, '')
+    : 'Hors flotte MATCH!';
+
+  // Status badges
+  const badges = [];
+  if (scanMeta.color && COLOR_HEX[scanMeta.color]) {
+    badges.push(`<div class="badge" style="border-color:${COLOR_HEX[scanMeta.color]}80">
+      <div style="width:8px;height:8px;background:${COLOR_HEX[scanMeta.color]};border-radius:50%;border:1px solid var(--line-bright)"></div>
+      ${COLOR_FR[scanMeta.color] || scanMeta.color}
+    </div>`);
+  }
+  if (scanMeta.vehicleType) {
+    badges.push(`<div class="badge">${TYPE_FR[scanMeta.vehicleType] || scanMeta.vehicleType}</div>`);
+  }
+  if (scanMeta.region) {
+    badges.push(`<div class="badge">Région ${scanMeta.region.toUpperCase()}</div>`);
+  }
+  if (scanMeta.confidence) {
+    const pct = Math.round(scanMeta.confidence * 100);
+    const cls = pct >= 90 ? 'active' : pct >= 70 ? 'warning' : 'danger';
+    badges.push(`<div class="badge ${cls}">Confiance ${pct}%</div>`);
+  }
+
+  // ============ ESTIMATION SECTION ============
+  let estimation = '';
+  if (scanMeta.vehicleType && VR_ESTIMATES[scanMeta.vehicleType]) {
+    const e = VR_ESTIMATES[scanMeta.vehicleType];
+    estimation = `
+    <div class="section">
+      <div class="section-title">Estimation indicative LLD</div>
+      <div class="data-grid">
+        <div class="data-cell">
+          <div class="data-label">Loyer mensuel estimé</div>
+          <div class="data-value highlight">${fmtEur(e.rentMin)} – ${fmtEur(e.rentMax)}</div>
+        </div>
+        <div class="data-cell">
+          <div class="data-label">Valeur résiduelle estimée</div>
+          <div class="data-value">${fmtEur(e.vrMin)} – ${fmtEur(e.vrMax)}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;background:var(--bg-2);border:1px dashed var(--line-bright);border-radius:6px;font-family:var(--font-mono);font-size:10px;color:var(--text-3);line-height:1.5">
+        ⚠ Fourchette indicative basée sur le type "${TYPE_FR[scanMeta.vehicleType]}".<br/>
+        À affiner avec ta grille VR par défaut MATCH! (modèle exact + énergie + millésime).
+      </div>
+    </div>`;
+  }
+
+  // ============ DETAIL SECTION ============
+  let detailSection = '';
+  if (hasMmc) {
+    detailSection = `
+    <div class="section">
+      <div class="section-title">Reconnaissance visuelle (Plate Recognizer)</div>
+      <div class="data-grid">
+        ${scanMeta.makeModel ? `<div class="data-cell full"><div class="data-label">Marque / Modèle détecté</div><div class="data-value highlight">${scanMeta.makeModel}</div></div>` : ''}
+        ${scanMeta.vehicleType ? `<div class="data-cell"><div class="data-label">Type</div><div class="data-value">${TYPE_FR[scanMeta.vehicleType] || scanMeta.vehicleType}</div></div>` : ''}
+        ${scanMeta.color ? `<div class="data-cell"><div class="data-label">Couleur</div><div class="data-value">${COLOR_FR[scanMeta.color] || scanMeta.color}</div></div>` : ''}
+        ${scanMeta.orientation ? `<div class="data-cell"><div class="data-label">Vue</div><div class="data-value">${scanMeta.orientation === 'Front' ? 'Avant' : (scanMeta.orientation === 'Rear' ? 'Arrière' : scanMeta.orientation)}</div></div>` : ''}
+        ${scanMeta.region ? `<div class="data-cell"><div class="data-label">Région plaque</div><div class="data-value">${scanMeta.region.toUpperCase()}</div></div>` : ''}
+      </div>
+    </div>`;
+  } else if (hasApiSource) {
+    // API was called but MMC was OFF
+    detailSection = `
+    <div class="section">
+      <div class="section-title">Marque / Modèle non disponible</div>
+      <div style="padding:12px;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.6">
+        Active <strong style="color:var(--hi-vis)">Make / Model / Color</strong> dans les réglages ⚙ pour récupérer automatiquement la marque, le modèle et la couleur du véhicule.
+      </div>
+    </div>`;
+  } else if (scanMeta.source === 'tesseract' || scanMeta.source === 'manual') {
+    // OCR local only — suggest upgrade
+    detailSection = `
+    <div class="section">
+      <div class="section-title">Données limitées</div>
+      <div style="padding:12px;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.6">
+        Avec un token Plate Recognizer + l'option MMC activée, l'app récupère automatiquement <strong style="color:var(--hi-vis)">marque, modèle, couleur et type</strong> du véhicule reconnu.
+      </div>
+    </div>`;
+  }
+
+  // ============ ACTIONS ============
+  const createBtnLabel = hasMmc
+    ? `➕ Créer fiche : ${scanMeta.makeModel}`
+    : '➕ Créer fiche véhicule';
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status warning">
+        <div class="marker"></div>
+        <span>Hors flotte MATCH!${hasMmc ? ' · données externes' : ''}</span>
+      </div>
+
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${plate}</div>
+      </div>
+
+      <div class="vehicle-headline" ${hasMmc ? '' : 'style="color: var(--text-2)"'}>${headline}</div>
+      <div class="vehicle-sub">${sub}</div>
+
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+      ${badges.length ? `<div class="status-bar">${badges.join('')}</div>` : ''}
+    </div>
+
+    ${detailSection}
+    ${estimation}
+
+    <div class="section">
+      <div class="section-title">Actions</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <button class="btn-ghost" onclick="window.toast && window.toast('Pré-remplissage MATCH! avec les données reconnues')">${createBtnLabel}</button>
+        <button class="btn-ghost">📸 Photographier le véhicule</button>
+        <button class="btn-ghost">🔍 Interroger API SIV (option payante)</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Plaques de test · Flotte MATCH!</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        ${Object.keys(MATCH_DB).map(p => `<button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('${p}', {source:'manual'})">${p}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Plaques de test · Prospects (SIV simulé)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        ${Object.keys(SIV_DB).map(p => {
+          const s = SIV_DB[p];
+          const tag = s.financingType === 'PROPRIETE' ? '🟢' : (s.financingType === 'LLD' ? '🟡' : '🔵');
+          return `<button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('${p}', {source:'manual'})">${tag} ${p}</button>`;
+        }).join('')}
+      </div>
+      <div style="margin-top:10px;font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.5">
+        🟢 Propriété (prospect chaud) · 🟡 LLD concurrent · 🔵 LCB/LOA
+      </div>
+    </div>
+  `;
+}
+
+function renderHistory() {
+  const list = el('historyList');
+  if (state.history.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⊞</div>
+        <div class="empty-title">Aucun scan</div>
+        <div class="empty-text">L'historique des plaques scannées apparaîtra ici</div>
+      </div>`;
+    return;
+  }
+  list.innerHTML = state.history.map((item, idx) => {
+    const time = item.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const sourceLabel = item.scanMeta && item.scanMeta.source === 'platerecognizer' ? ' · API'
+                      : item.scanMeta && item.scanMeta.source === 'tesseract' ? ' · Local' : '';
+
+    // Badge depending on resultType
+    let statusHtml = '';
+    if (item.resultType === 'match') {
+      statusHtml = '<div class="history-status found">FLOTTE</div>';
+    } else if (item.resultType === 'siv') {
+      const score = item.sivData && item.sivData.leadScore;
+      const isHotProspect = item.sivData && item.sivData.financingType === 'PROPRIETE';
+      statusHtml = `<div class="history-status" style="background:${isHotProspect ? 'rgba(255,214,10,0.18)' : 'rgba(96,165,250,0.15)'};color:${isHotProspect ? 'var(--hi-vis)' : 'var(--signal-blue)'}">${score || 'PROSPECT'}</div>`;
+    } else {
+      statusHtml = '<div class="history-status not-found">404</div>';
+    }
+
+    return `
+      <div class="history-item" data-idx="${idx}">
+        <div class="history-plate">${item.plate}</div>
+        <div class="history-info">
+          <div class="history-model">${item.model}</div>
+          <div class="history-time">${time}${sourceLabel}</div>
+        </div>
+        ${statusHtml}
+      </div>`;
+  }).join('');
+  list.querySelectorAll('.history-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const entry = state.history[parseInt(item.dataset.idx)];
+      if (entry.resultType === 'match') renderResult(entry.data, entry.scanMeta);
+      else if (entry.resultType === 'siv') renderSivProspect(entry.sivData, entry.scanMeta);
+      else renderNotFound(entry.plate, entry.scanMeta);
+      switchView('result');
+    });
+  });
+}
+
+function openSettings() {
+  el('apiToken').value = state.settings.token;
+  el('apiRegion').value = state.settings.region;
+  el('switchMmc').classList.toggle('on', state.settings.mmc);
+  el('switchStrict').classList.toggle('on', state.settings.strict);
+  el('regcheckUsername').value = state.settings.regcheckUsername || '';
+  refreshQuotaDisplay();
+  el('settingsModal').classList.add('show');
+}
+function closeSettings() { el('settingsModal').classList.remove('show'); }
+function refreshQuotaDisplay() {
+  const wrap = el('quotaWrap');
+  if (state.quota) {
+    wrap.style.display = 'block';
+    el('quotaUsed').textContent = `${state.quota.used} appels utilisés`;
+    el('quotaTotal').textContent = `/ ${state.quota.max} max`;
+    const pct = (state.quota.used / state.quota.max) * 100;
+    const fill = el('quotaFill');
+    fill.style.width = pct + '%';
+    fill.classList.toggle('warning', pct >= 70 && pct < 90);
+    fill.classList.toggle('danger', pct >= 90);
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+el('btnSettings').addEventListener('click', openSettings);
+el('settingsModal').addEventListener('click', (e) => {
+  if (e.target === el('settingsModal')) closeSettings();
+});
+el('switchMmc').addEventListener('click', () => el('switchMmc').classList.toggle('on'));
+el('switchStrict').addEventListener('click', () => el('switchStrict').classList.toggle('on'));
+
+el('btnSaveSettings').addEventListener('click', () => {
+  state.settings = {
+    token: el('apiToken').value.trim(),
+    region: el('apiRegion').value,
+    mmc: el('switchMmc').classList.contains('on'),
+    strict: el('switchStrict').classList.contains('on'),
+    regcheckUsername: el('regcheckUsername').value.trim(),
+  };
+  saveSettings();
+  refreshEngineUi();
+  closeSettings();
+  toast(state.settings.token ? 'Plate Recognizer activé' : 'Mode OCR local activé');
+});
+
+el('btnTestApi').addEventListener('click', async () => {
+  const token = el('apiToken').value.trim();
+  if (!token) { toast('Saisis un token API d\'abord'); return; }
+  el('btnTestApi').textContent = 'Test…';
+  try {
+    const resp = await fetch('https://api.platerecognizer.com/v1/statistics/', {
+      headers: { 'Authorization': `Token ${token}` }
+    });
+    if (resp.status === 401 || resp.status === 403) {
+      toast('Token invalide', 3000);
+    } else if (resp.ok) {
+      const data = await resp.json();
+      const calls = (data.usage && data.usage.calls) || 0;
+      const total = data.total_calls || (data.usage && data.usage.max_calls) || 2500;
+      state.quota = { used: calls, max: total };
+      refreshQuotaPill();
+      refreshQuotaDisplay();
+      toast(`Token OK · ${calls}/${total} appels ce mois`, 3500);
+    } else {
+      toast(`Erreur ${resp.status}`, 3000);
+    }
+  } catch (err) {
+    toast('Erreur réseau : ' + err.message, 3500);
+  } finally {
+    el('btnTestApi').textContent = 'Tester';
+  }
+});
+
+el('btnAction').addEventListener('click', async () => {
+  if (!state.stream) {
+    el('btnActionText').textContent = 'Démarrage…';
+    el('btnAction').disabled = true;
+    const ok = await startCamera();
+    el('btnAction').disabled = false;
+    el('btnActionText').textContent = ok ? 'Scanner la plaque' : 'Réessayer';
+  } else {
+    captureAndScan();
+  }
+});
+
+el('btnManual').addEventListener('click', () => {
+  const value = el('manualPlate').value.trim();
+  if (!value) { toast('Saisissez une plaque'); return; }
+  lookupPlate(value, { source: 'manual' });
+});
+
+el('manualPlate').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') el('btnManual').click();
+});
+
+el('manualPlate').addEventListener('input', (e) => {
+  let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (val.length > 2) val = val.slice(0,2) + '-' + val.slice(2);
+  if (val.length > 6) val = val.slice(0,6) + '-' + val.slice(6, 8);
+  e.target.value = val.slice(0, 9);
+});
+
+window.addEventListener('beforeunload', () => {
+  stopCamera();
+  if (state.worker) state.worker.terminate();
+});
+
+// ============================================================
+// MODULE ÉVALUATION REPRISE
+// ============================================================
+
+// Auto-format plaque dans le champ
+el('appraisalPlate').addEventListener('input', (e) => {
+  let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (val.length > 2) val = val.slice(0,2) + '-' + val.slice(2);
+  if (val.length > 6) val = val.slice(0,6) + '-' + val.slice(6, 8);
+  e.target.value = val.slice(0, 9);
+});
+
+// Lookup regcheck.org.uk
+async function fetchRegcheck(plate) {
+  const username = state.settings.regcheckUsername;
+  if (!username) {
+    throw new Error('Saisis ton username regcheck.org.uk dans les réglages ⚙');
+  }
+  // CheckFrance endpoint - returns XML with vehicleJson element
+  const url = `https://www.regcheck.org.uk/api/reg.asmx/CheckFrance?RegistrationNumber=${encodeURIComponent(plate)}&username=${encodeURIComponent(username)}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Erreur API ${resp.status} (token invalide ou crédits épuisés ?)`);
+  }
+  const text = await resp.text();
+  // Parse XML to find vehicleJson
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(text, 'text/xml');
+  const jsonNode = xmlDoc.getElementsByTagName('vehicleJson')[0];
+  if (!jsonNode || !jsonNode.textContent) {
+    throw new Error('Pas de données pour cette plaque');
+  }
+  const data = JSON.parse(jsonNode.textContent);
+  return data;
+}
+
+el('btnAppraisalLookup').addEventListener('click', async () => {
+  const plate = el('appraisalPlate').value.trim();
+  if (!plate) { toast('Saisis une plaque'); return; }
+
+  const btn = el('btnAppraisalLookup');
+  const originalText = btn.textContent;
+  btn.textContent = '...';
+  btn.disabled = true;
+
+  try {
+    const data = await fetchRegcheck(plate);
+    console.log('Regcheck response:', data);
+
+    // Parse Regcheck response (cf. doc PDF)
+    // Description, RegistrationYear, CarMake, CarModel, FuelType, EngineSize, RegistrationDate
+    const make = (data.CarMake && data.CarMake.CurrentTextValue) || '';
+    const model = (data.CarModel && data.CarModel.CurrentTextValue) || '';
+    const fuel = (data.FuelType && data.FuelType.CurrentTextValue) || '';
+    const year = data.RegistrationYear || '';
+
+    el('ap_brand').value = make;
+    el('ap_model').value = model;
+    el('ap_year').value = year;
+
+    // Map energy
+    const energySelect = el('ap_energy');
+    const fuelLower = fuel.toLowerCase();
+    if (fuelLower.includes('diesel') || fuelLower.includes('gazole')) energySelect.value = 'DIESEL';
+    else if (fuelLower.includes('hybr')) energySelect.value = 'HYBRIDE';
+    else if (fuelLower.includes('elec')) energySelect.value = 'ELECTRIQUE';
+    else energySelect.value = 'ESSENCE';
+
+    // Estimate price from internal table
+    const estimatedPrice = estimatePrice(make, model);
+    if (estimatedPrice && !el('ap_price').value) {
+      el('ap_price').value = estimatedPrice;
+      toast(`Données récupérées · prix estimé ${estimatedPrice.toLocaleString('fr-FR')}€ (à valider)`);
+    } else {
+      toast('Données récupérées · saisis le prix neuf');
+    }
+  } catch (err) {
+    toast('Erreur : ' + err.message, 4000);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+});
+
+// Calcul de l'évaluation
+el('btnComputeAppraisal').addEventListener('click', () => {
+  const brand = el('ap_brand').value.trim();
+  const model = el('ap_model').value.trim();
+  const energy = el('ap_energy').value;
+  const year = parseInt(el('ap_year').value);
+  const km = parseInt(el('ap_km').value);
+  const priceNew = parseInt(el('ap_price').value);
+
+  // Validation
+  const missing = [];
+  if (!brand) missing.push('marque');
+  if (!model) missing.push('modèle');
+  if (!year || year < 1990 || year > 2030) missing.push('année');
+  if (!km || km < 0) missing.push('kilométrage');
+  if (!priceNew || priceNew < 1000) missing.push('prix neuf');
+
+  if (missing.length) {
+    toast('Champs manquants : ' + missing.join(', '), 3500);
+    return;
+  }
+
+  const now = new Date();
+  const ageYears = (now.getFullYear() - year) + (now.getMonth() / 12);
+  const result = computeAppraisal({ priceNew, energy, ageYears, kmCurrent: km });
+
+  renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, ...result });
+});
+
+function renderAppraisalResult(r) {
+  const energyLabel = { ESSENCE: 'Essence', DIESEL: 'Diesel', HYBRIDE: 'Hybride', ELECTRIQUE: 'Électrique' }[r.energy] || r.energy;
+  const energyColor = { ESSENCE: '#e8a845', DIESEL: '#a78bfa', HYBRIDE: '#34d399', ELECTRIQUE: '#60a5fa' }[r.energy];
+  const fmt = n => n.toLocaleString('fr-FR') + ' €';
+
+  el('appraisalResult').innerHTML = `
+    <div style="background: var(--bg-1); border-top: 1px solid var(--line); margin-top: 18px;">
+
+      <div class="result-header" style="border-bottom: 1px solid var(--line)">
+        <div class="result-status">
+          <div class="marker"></div>
+          <span>Évaluation calculée</span>
+        </div>
+        <div class="vehicle-headline">${r.brand} ${r.model}</div>
+        <div class="vehicle-sub">${r.year} · ${r.km.toLocaleString('fr-FR')} km · ${(r.ageYears).toFixed(1)} ans</div>
+        <div class="status-bar">
+          <div class="badge" style="color: ${energyColor}; border-color: ${energyColor}40">${energyLabel}</div>
+          <div class="badge">Prix neuf ${fmt(r.priceNew)}</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">VR théorique selon grille LEASECAR</div>
+        <div style="display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--line)">
+          <div style="flex: 1">
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">VR théorique</div>
+            <div style="font-family: var(--font-mono); font-size: 28px; font-weight: 800; color: var(--hi-vis); line-height: 1;">${fmt(r.vrTheo)}</div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); margin-top: 4px">${r.vrPercent}% du prix catalogue</div>
+          </div>
+          <div style="border-left: 1px solid var(--line); padding-left: 18px">
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">Décote totale</div>
+            <div style="font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--text-1); line-height: 1;">-${fmt(r.priceNew - r.vrTheo)}</div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); margin-top: 4px">${Math.round(((r.priceNew - r.vrTheo) / r.priceNew) * 100)}% de décote</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Fourchette de négociation</div>
+        <div class="data-grid">
+          <div class="data-cell">
+            <div class="data-label">Reprise basse</div>
+            <div class="data-value" style="color: var(--signal-red)">${fmt(r.repriseLow)}</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">Recommandée</div>
+            <div class="data-value highlight">${fmt(r.repriseRecom)}</div>
+          </div>
+          <div class="data-cell full">
+            <div class="data-label">Reprise haute (négo limite)</div>
+            <div class="data-value" style="color: var(--signal-green)">${fmt(r.repriseHigh)}</div>
+          </div>
+        </div>
+        <div style="margin-top: 12px; padding: 10px 12px; background: var(--bg-2); border-radius: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--text-3); line-height: 1.6">
+          💡 Bornes : -10% pour la reprise basse (couvrir frais préparation/marge), +5% pour la haute (ne dépasse pas la cote marché).
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Simulation LLD VO 24 mois / 30 000 km supplémentaires</div>
+        <div class="data-grid">
+          <div class="data-cell">
+            <div class="data-label">VR fin LLD VO</div>
+            <div class="data-value">${fmt(r.relou.vrFinEur)}</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">% VR finale</div>
+            <div class="data-value">${r.relou.vrFinPct}%</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">Amortissement</div>
+            <div class="data-value">${fmt(r.relou.amortissement)}</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">Frais financiers</div>
+            <div class="data-value">${fmt(r.relou.fraisFin)}</div>
+          </div>
+          <div class="data-cell full" style="margin-top: 8px; padding: 12px; background: var(--bg-2); border-radius: 6px">
+            <div class="data-label">Loyer total HT estimé</div>
+            <div class="data-value highlight" style="font-size: 22px; margin-top: 4px">${fmt(r.relou.loyerTotalHT)}/mois</div>
+            <div class="data-label" style="margin-top: 6px; font-size: 9px">Financier ${fmt(r.relou.loyerFinHT)} + entretien ${fmt(r.relou.entretien)} · taux indicatif 5,8% Réunion</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <button class="btn-ghost" onclick="window.toast && window.toast('Export PDF — à brancher sur backend')">📄 Exporter PDF</button>
+        <button class="btn-ghost" onclick="window.toast && window.toast('Envoyé au client (démo)')">📧 Envoyer par mail</button>
+      </div>
+    </div>
+  `;
+}
+
+window.lookupPlate = lookupPlate;
+window.toast = toast;
+
+refreshEngineUi();
+setTimeout(() => {
+  if (!state.settings.token) {
+    toast('Configure ton token Plate Recognizer dans ⚙ pour la haute précision', 5000);
+  } else {
+    toast('Plate Recognizer prêt · Mire une plaque', 3000);
+  }
+}, 800);
+</script>
+</body>
+</html>
