@@ -5,6 +5,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>MATCH! Scanner — LEASECAR</title>
+<!-- PWA iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="MATCH! Scan" />
+<meta name="theme-color" content="#0a0b0d" />
+<!-- Icône SVG encodée en base64 — carré jaune avec M! -->
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjZmZkNjBhIi8+PHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtd2VpZ2h0PSI5MDAiIGZvbnQtc2l6ZT0iOTAiIGZpbGw9IiMwYTBiMGQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiPk0hPC90ZXh0Pjwvc3ZnPg==" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23ffd60a'/><text x='50%25' y='55%25' font-family='monospace' font-weight='900' font-size='50' fill='%230a0b0d' text-anchor='middle' dominant-baseline='middle'>M!</text></svg>" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
 <style>
   :root {
@@ -507,6 +515,26 @@
               <label class="data-label">Prix neuf catalogue TTC</label>
               <input type="number" class="field-input" id="ap_price" placeholder="26000" min="0" />
             </div>
+            <div class="data-cell">
+              <label class="data-label">État du véhicule</label>
+              <select class="field-select" id="ap_condition">
+                <option value="excellent">Excellent (comme neuf)</option>
+                <option value="bon" selected>Bon (usure normale)</option>
+                <option value="moyen">Moyen (défauts visibles)</option>
+                <option value="mauvais">Mauvais (réparations requises)</option>
+              </select>
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Segment</label>
+              <select class="field-select" id="ap_segment">
+                <option value="citadine">Citadine (Clio, 208, C3…)</option>
+                <option value="compacte" selected>Compacte (Mégane, 308…)</option>
+                <option value="suv">SUV / Crossover</option>
+                <option value="berline">Berline (508, Classe C…)</option>
+                <option value="utilitaire">Utilitaire (Trafic, Expert…)</option>
+                <option value="premium">Premium (BMW, Audi, Mercedes)</option>
+              </select>
+            </div>
           </div>
           <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 10px; line-height: 1.5">
             💡 Le prix neuf est estimé automatiquement après lookup. Tu peux le corriger.
@@ -830,39 +858,123 @@ function estimatePrice(brand, model) {
 }
 
 // Compute full appraisal
-function computeAppraisal({ priceNew, energy, ageYears, kmCurrent }) {
+// ============================================================
+// COEFFICIENTS D'AJUSTEMENT — Cote affinée
+// Sources : moyennes observées marché VO français 2023-2025
+// ============================================================
+
+// Coefficient marque : certaines marques décotent moins
+const BRAND_COEFF = {
+  'toyota': 1.12, 'lexus': 1.10, 'porsche': 1.15, 'dacia': 1.08,
+  'bmw': 1.06, 'mercedes': 1.05, 'audi': 1.04, 'volkswagen': 1.03,
+  'mini': 1.05, 'mazda': 1.04, 'hyundai': 1.03, 'kia': 1.03,
+  'tesla': 0.92, // décote rapide (évolution tech + baisse prix catalogue)
+  'renault': 1.00, 'peugeot': 0.99, 'citroen': 0.97, 'fiat': 0.95,
+  'opel': 0.96, 'ford': 0.97, 'nissan': 0.98, 'seat': 0.97,
+  'skoda': 1.01, 'volvo': 1.04, 'land rover': 1.02, 'jeep': 0.96,
+};
+
+// Coefficient segment
+const SEGMENT_COEFF = {
+  'citadine': 0.95,    // décote plus vite (marché saturé)
+  'compacte': 1.00,    // référence
+  'suv': 1.08,         // forte demande, décote lente
+  'berline': 0.94,     // moins demandé, décote plus vite
+  'utilitaire': 1.06,  // utilitaires gardent bien leur valeur (usage pro)
+  'premium': 1.04,     // premium tient mieux mais dépend de la marque
+};
+
+// Coefficient état
+const CONDITION_COEFF = {
+  'excellent': 1.08,  // +8% si véhicule impeccable
+  'bon': 1.00,        // référence
+  'moyen': 0.88,      // -12% si défauts visibles
+  'mauvais': 0.72,    // -28% si réparations nécessaires
+};
+
+// Coefficient énergie post-ZFE (ajustement marché 2024-2026)
+const ENERGY_MARKET_COEFF = {
+  'ESSENCE': 1.00,
+  'DIESEL': 0.92,      // -8% pénalité ZFE / image marché
+  'HYBRIDE': 1.06,     // +6% prime hybride VO
+  'ELECTRIQUE': 0.88,  // -12% volatilité batterie + baisse prix neuf
+};
+
+// Coefficient régional La Réunion (marché insulaire)
+const REUNION_COEFF = 1.10; // +10% vs métropole (import coûteux, offre limitée)
+
+// Coefficient kilométrique non-linéaire
+// Les premiers 40k km décotent peu, au-delà de 80k ça accélère
+function kmCoefficient(kmCurrent) {
+  if (kmCurrent <= 15000) return 1.05;     // très peu roulé = prime
+  if (kmCurrent <= 30000) return 1.02;
+  if (kmCurrent <= 50000) return 1.00;     // référence
+  if (kmCurrent <= 70000) return 0.97;
+  if (kmCurrent <= 90000) return 0.93;
+  if (kmCurrent <= 110000) return 0.88;
+  if (kmCurrent <= 130000) return 0.82;
+  return 0.75;                              // >130k = forte décote
+}
+
+function computeAppraisal({ priceNew, energy, ageYears, kmCurrent, brand, condition, segment }) {
   const e = normalizeEnergy(energy);
   const durationMonths = Math.max(12, Math.round(ageYears * 12));
   const kmK = Math.max(10, Math.round(kmCurrent / 1000));
 
-  const vrPercent = interpolateVR(e, durationMonths, kmK);
-  const vrTheo = Math.round((priceNew * vrPercent / 100) / 100) * 100;
+  // 1. VR brute depuis la grille LEASECAR
+  const vrPercentBrut = interpolateVR(e, durationMonths, kmK);
+  const vrBrut = Math.round(priceNew * vrPercentBrut / 100);
 
-  // Fourchette négociation
-  const repriseLow = Math.round((vrTheo * 0.90) / 100) * 100;
-  const repriseRecom = vrTheo;
-  const repriseHigh = Math.round((vrTheo * 1.05) / 100) * 100;
+  // 2. Appliquer les coefficients d'ajustement
+  const brandKey = (brand || '').toLowerCase().trim();
+  const coefBrand = BRAND_COEFF[brandKey] || 1.00;
+  const coefSegment = SEGMENT_COEFF[segment] || 1.00;
+  const coefCondition = CONDITION_COEFF[condition] || 1.00;
+  const coefEnergy = ENERGY_MARKET_COEFF[e] || 1.00;
+  const coefKm = kmCoefficient(kmCurrent);
+  const coefRegion = REUNION_COEFF;
 
-  // Simulation LLD VO si re-loué (24 mois / 30 000 km supplémentaires)
+  const coefTotal = coefBrand * coefSegment * coefCondition * coefEnergy * coefKm * coefRegion;
+
+  // 3. Cote affinée
+  const coteAffinee = Math.round((vrBrut * coefTotal) / 100) * 100;
+  const cotePct = Math.round((coteAffinee / priceNew) * 1000) / 10;
+
+  // 4. Fourchette de négociation
+  const repriseLow = Math.round((coteAffinee * 0.90) / 100) * 100;
+  const repriseRecom = coteAffinee;
+  const repriseHigh = Math.round((coteAffinee * 1.05) / 100) * 100;
+
+  // 5. Simulation LLD VO (24 mois / 30 000 km supp)
   const reloueDurMois = 24;
   const reloueKmTotal = kmCurrent + 30000;
-  const vrFinPct = interpolateVR(e, durationMonths + reloueDurMois, Math.round(reloueKmTotal / 1000));
-  const vrFinEur = Math.round((priceNew * vrFinPct / 100) / 100) * 100;
-  const amortissement = Math.max(0, vrTheo - vrFinEur);
-  const taux = 0.058; // 5.8% taux LLD VO indicatif Réunion
-  const fraisFin = Math.round(((vrTheo + vrFinEur) / 2) * taux * (reloueDurMois / 12));
+  const vrFinPctBrut = interpolateVR(e, durationMonths + reloueDurMois, Math.round(reloueKmTotal / 1000));
+  const vrFinBrut = Math.round(priceNew * vrFinPctBrut / 100);
+  const vrFinEur = Math.round((vrFinBrut * coefTotal) / 100) * 100;
+  const amortissement = Math.max(0, coteAffinee - vrFinEur);
+  const taux = 0.058;
+  const fraisFin = Math.round(((coteAffinee + vrFinEur) / 2) * taux * (reloueDurMois / 12));
   const totalFin = amortissement + fraisFin;
   const loyerFinHT = Math.round(totalFin / reloueDurMois);
   const entretien = e === 'ELECTRIQUE' ? 25 : 45;
   const loyerTotalHT = loyerFinHT + entretien;
 
   return {
-    energy: e, vrPercent: Math.round(vrPercent * 10) / 10,
-    vrTheo, repriseLow, repriseRecom, repriseHigh,
+    energy: e,
+    // Brut (grille seule)
+    vrPercentBrut: Math.round(vrPercentBrut * 10) / 10,
+    vrBrut,
+    // Affiné (avec coefficients)
+    cotePct, coteAffinee,
+    coefTotal: Math.round(coefTotal * 1000) / 1000,
+    coefficients: { marque: coefBrand, segment: coefSegment, etat: coefCondition, energie: coefEnergy, km: coefKm, region: coefRegion },
+    // Négo
+    repriseLow, repriseRecom, repriseHigh,
     durationMonths, kmK,
+    // LLD VO
     relou: {
       durMois: reloueDurMois, kmTotal: reloueKmTotal,
-      vrFinPct: Math.round(vrFinPct * 10) / 10, vrFinEur,
+      vrFinPct: Math.round((vrFinEur / priceNew) * 1000) / 10, vrFinEur,
       amortissement, fraisFin, totalFin,
       loyerFinHT, entretien, loyerTotalHT,
     },
@@ -1774,8 +1886,9 @@ el('btnComputeAppraisal').addEventListener('click', () => {
   const year = parseInt(el('ap_year').value);
   const km = parseInt(el('ap_km').value);
   const priceNew = parseInt(el('ap_price').value);
+  const condition = el('ap_condition').value;
+  const segment = el('ap_segment').value;
 
-  // Validation
   const missing = [];
   if (!brand) missing.push('marque');
   if (!model) missing.push('modèle');
@@ -1790,15 +1903,17 @@ el('btnComputeAppraisal').addEventListener('click', () => {
 
   const now = new Date();
   const ageYears = (now.getFullYear() - year) + (now.getMonth() / 12);
-  const result = computeAppraisal({ priceNew, energy, ageYears, kmCurrent: km });
+  const result = computeAppraisal({ priceNew, energy, ageYears, kmCurrent: km, brand, condition, segment });
 
-  renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, ...result });
+  renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, condition, segment, ...result });
 });
 
 function renderAppraisalResult(r) {
   const energyLabel = { ESSENCE: 'Essence', DIESEL: 'Diesel', HYBRIDE: 'Hybride', ELECTRIQUE: 'Électrique' }[r.energy] || r.energy;
   const energyColor = { ESSENCE: '#e8a845', DIESEL: '#a78bfa', HYBRIDE: '#34d399', ELECTRIQUE: '#60a5fa' }[r.energy];
   const fmt = n => n.toLocaleString('fr-FR') + ' €';
+  const coefColor = v => v >= 1.03 ? 'var(--signal-green)' : v <= 0.97 ? 'var(--signal-red)' : 'var(--text-1)';
+  const coefSign = v => v >= 1 ? `+${Math.round((v - 1) * 100)}%` : `${Math.round((v - 1) * 100)}%`;
 
   el('appraisalResult').innerHTML = `
     <div style="background: var(--bg-1); border-top: 1px solid var(--line); margin-top: 18px;">
@@ -1806,28 +1921,59 @@ function renderAppraisalResult(r) {
       <div class="result-header" style="border-bottom: 1px solid var(--line)">
         <div class="result-status">
           <div class="marker"></div>
-          <span>Évaluation calculée</span>
+          <span>Cote affinée calculée</span>
         </div>
         <div class="vehicle-headline">${r.brand} ${r.model}</div>
         <div class="vehicle-sub">${r.year} · ${r.km.toLocaleString('fr-FR')} km · ${(r.ageYears).toFixed(1)} ans</div>
         <div class="status-bar">
           <div class="badge" style="color: ${energyColor}; border-color: ${energyColor}40">${energyLabel}</div>
           <div class="badge">Prix neuf ${fmt(r.priceNew)}</div>
+          <div class="badge">Coef total ×${r.coefTotal}</div>
         </div>
       </div>
 
       <div class="section">
-        <div class="section-title">VR théorique selon grille LEASECAR</div>
-        <div style="display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--line)">
+        <div class="section-title">Cote affinée LEASECAR</div>
+        <div style="display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--hi-vis)40">
           <div style="flex: 1">
-            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">VR théorique</div>
-            <div style="font-family: var(--font-mono); font-size: 28px; font-weight: 800; color: var(--hi-vis); line-height: 1;">${fmt(r.vrTheo)}</div>
-            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); margin-top: 4px">${r.vrPercent}% du prix catalogue</div>
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">Cote affinée</div>
+            <div style="font-family: var(--font-mono); font-size: 28px; font-weight: 800; color: var(--hi-vis); line-height: 1;">${fmt(r.coteAffinee)}</div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); margin-top: 4px">${r.cotePct}% du prix catalogue</div>
           </div>
           <div style="border-left: 1px solid var(--line); padding-left: 18px">
-            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">Décote totale</div>
-            <div style="font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--text-1); line-height: 1;">-${fmt(r.priceNew - r.vrTheo)}</div>
-            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); margin-top: 4px">${Math.round(((r.priceNew - r.vrTheo) / r.priceNew) * 100)}% de décote</div>
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">VR brute (grille)</div>
+            <div style="font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text-2); line-height: 1;">${fmt(r.vrBrut)}</div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 4px">${r.vrPercentBrut}% avant ajustement</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Coefficients d'ajustement</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Marque (${r.brand})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.marque)}">${coefSign(r.coefficients.marque)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Segment (${r.segment || '—'})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.segment)}">${coefSign(r.coefficients.segment)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">État (${r.condition || '—'})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.etat)}">${coefSign(r.coefficients.etat)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Énergie marché (${energyLabel})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.energie)}">${coefSign(r.coefficients.energie)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Kilométrage (${r.km.toLocaleString('fr-FR')} km)</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.km)}">${coefSign(r.coefficients.km)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px;border:1px dashed rgba(255,214,10,0.3)">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--hi-vis)">Marché Réunion</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--signal-green)">${coefSign(r.coefficients.region)}</span>
           </div>
         </div>
       </div>
@@ -1836,7 +1982,7 @@ function renderAppraisalResult(r) {
         <div class="section-title">Fourchette de négociation</div>
         <div class="data-grid">
           <div class="data-cell">
-            <div class="data-label">Reprise basse</div>
+            <div class="data-label">Reprise basse (-10%)</div>
             <div class="data-value" style="color: var(--signal-red)">${fmt(r.repriseLow)}</div>
           </div>
           <div class="data-cell">
@@ -1844,17 +1990,14 @@ function renderAppraisalResult(r) {
             <div class="data-value highlight">${fmt(r.repriseRecom)}</div>
           </div>
           <div class="data-cell full">
-            <div class="data-label">Reprise haute (négo limite)</div>
+            <div class="data-label">Reprise haute (+5%)</div>
             <div class="data-value" style="color: var(--signal-green)">${fmt(r.repriseHigh)}</div>
           </div>
-        </div>
-        <div style="margin-top: 12px; padding: 10px 12px; background: var(--bg-2); border-radius: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--text-3); line-height: 1.6">
-          💡 Bornes : -10% pour la reprise basse (couvrir frais préparation/marge), +5% pour la haute (ne dépasse pas la cote marché).
         </div>
       </div>
 
       <div class="section">
-        <div class="section-title">Simulation LLD VO 24 mois / 30 000 km supplémentaires</div>
+        <div class="section-title">Simulation LLD VO 24 mois / 30 000 km</div>
         <div class="data-grid">
           <div class="data-cell">
             <div class="data-label">VR fin LLD VO</div>
@@ -1875,7 +2018,7 @@ function renderAppraisalResult(r) {
           <div class="data-cell full" style="margin-top: 8px; padding: 12px; background: var(--bg-2); border-radius: 6px">
             <div class="data-label">Loyer total HT estimé</div>
             <div class="data-value highlight" style="font-size: 22px; margin-top: 4px">${fmt(r.relou.loyerTotalHT)}/mois</div>
-            <div class="data-label" style="margin-top: 6px; font-size: 9px">Financier ${fmt(r.relou.loyerFinHT)} + entretien ${fmt(r.relou.entretien)} · taux indicatif 5,8% Réunion</div>
+            <div class="data-label" style="margin-top: 6px; font-size: 9px">Financier ${fmt(r.relou.loyerFinHT)} + entretien ${fmt(r.relou.entretien)} · taux 5,8% Réunion</div>
           </div>
         </div>
       </div>
