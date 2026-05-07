@@ -850,12 +850,12 @@ const ADEME_DB = {
   'fiat ducato': { brand:'Fiat', model:'Ducato', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:9, co2:210, priceNew:35000, yearMin:2014, yearMax:2026 },
   'fiat scudo': { brand:'Fiat', model:'Scudo', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:165, priceNew:30000, yearMin:2022, yearMax:2026 },
   'fiat fullback': { brand:'Fiat', model:'Fullback', segment:'pickup', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:210, priceNew:30000, yearMin:2016, yearMax:2020 },
-  'alfa romeo giulia': { brand:'Alfa', model:'Romeo Giulia', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:10, co2:140, priceNew:52000, yearMin:2016, yearMax:2026 },
-  'alfa romeo giulietta': { brand:'Alfa', model:'Romeo Giulietta', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:6, co2:118, priceNew:28000, yearMin:2010, yearMax:2020 },
-  'alfa romeo stelvio': { brand:'Alfa', model:'Romeo Stelvio', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:160, priceNew:58000, yearMin:2017, yearMax:2026 },
-  'alfa romeo tonale': { brand:'Alfa', model:'Romeo Tonale', segment:'premium', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:135, priceNew:40000, yearMin:2022, yearMax:2026 },
-  'alfa romeo mito': { brand:'Alfa', model:'Romeo Mito', segment:'citadine', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:118, priceNew:18000, yearMin:2008, yearMax:2018 },
-  'alfa romeo 4c': { brand:'Alfa', model:'Romeo 4C', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:10, co2:160, priceNew:62000, yearMin:2013, yearMax:2020 },
+  'alfa romeo giulia': { brand:'Alfa Romeo', model:'Giulia', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:10, co2:140, priceNew:52000, yearMin:2016, yearMax:2026 },
+  'alfa romeo giulietta': { brand:'Alfa Romeo', model:'Giulietta', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:6, co2:118, priceNew:28000, yearMin:2010, yearMax:2020 },
+  'alfa romeo stelvio': { brand:'Alfa Romeo', model:'Stelvio', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:160, priceNew:58000, yearMin:2017, yearMax:2026 },
+  'alfa romeo tonale': { brand:'Alfa Romeo', model:'Tonale', segment:'premium', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:135, priceNew:40000, yearMin:2022, yearMax:2026 },
+  'alfa romeo mito': { brand:'Alfa Romeo', model:'Mito', segment:'citadine', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:118, priceNew:18000, yearMin:2008, yearMax:2018 },
+  'alfa romeo 4c': { brand:'Alfa Romeo', model:'4C', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:10, co2:160, priceNew:62000, yearMin:2013, yearMax:2020 },
   'lancia ypsilon': { brand:'Lancia', model:'Ypsilon', segment:'citadine', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:118, priceNew:17000, yearMin:2011, yearMax:2026 },
   'volkswagen up': { brand:'Volkswagen', model:'Up', segment:'citadine', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:108, priceNew:14000, yearMin:2011, yearMax:2023 },
   'volkswagen e-up': { brand:'Volkswagen', model:'e-Up', segment:'citadine', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:3, co2:0, priceNew:24000, yearMin:2013, yearMax:2023 },
@@ -982,7 +982,7 @@ const ADEME_DB = {
   'mercedes citan': { brand:'Mercedes', model:'Citan', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:6, co2:140, priceNew:28000, yearMin:2012, yearMax:2026 },
   'mercedes v-class': { brand:'Mercedes', model:'V-Class', segment:'compacte', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:8, co2:165, priceNew:65000, yearMin:2014, yearMax:2026 },
   'mercedes x-class': { brand:'Mercedes', model:'X-Class', segment:'pickup', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:210, priceNew:42000, yearMin:2017, yearMax:2020 },
-  'mercedes amg gt': { brand:'Mercedes', model:'AMG GT', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:250, priceNew:150000, yearMin:2014, yearMax:2026 },
+  'mercedes amg gt': { brand:'Mercedes-AMG', model:'GT', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:250, priceNew:150000, yearMin:2014, yearMax:2026 },
   'toyota aygo': { brand:'Toyota', model:'Aygo', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:3, co2:108, priceNew:15000, yearMin:2014, yearMax:2026 },
   'toyota aygo x': { brand:'Toyota', model:'Aygo X', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:110, priceNew:17000, yearMin:2022, yearMax:2026 },
   'toyota yaris': { brand:'Toyota', model:'Yaris', segment:'citadine', energies:['HYBRIDE','ESSENCE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:92, priceNew:22000, yearMin:2020, yearMax:2026 },
@@ -1164,13 +1164,13 @@ const ADEME_DB = {
   'mini countryman': { brand:'Mini', model:'Countryman', segment:'premium', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:36000, yearMin:2017, yearMax:2026 },
   'mini aceman': { brand:'Mini', model:'Aceman', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:7, co2:0, priceNew:38000, yearMin:2024, yearMax:2026 },
   'mini paceman': { brand:'Mini', model:'Paceman', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:140, priceNew:28000, yearMin:2013, yearMax:2017 },
-  'land rover defender': { brand:'Land', model:'Rover Defender', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:13, co2:200, priceNew:75000, yearMin:2020, yearMax:2026 },
-  'land rover discovery': { brand:'Land', model:'Rover Discovery', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:12, co2:200, priceNew:68000, yearMin:2017, yearMax:2026 },
-  'land rover discovery sport': { brand:'Land', model:'Rover Discovery Sport', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:10, co2:160, priceNew:48000, yearMin:2014, yearMax:2026 },
-  'range rover': { brand:'Range', model:'Rover', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:15, co2:210, priceNew:135000, yearMin:2013, yearMax:2026 },
-  'range rover sport': { brand:'Range', model:'Rover Sport', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:15, co2:195, priceNew:110000, yearMin:2018, yearMax:2026 },
-  'range rover velar': { brand:'Range', model:'Rover Velar', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:12, co2:170, priceNew:75000, yearMin:2017, yearMax:2026 },
-  'range rover evoque': { brand:'Range', model:'Rover Evoque', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:9, co2:160, priceNew:52000, yearMin:2019, yearMax:2026 },
+  'land rover defender': { brand:'Land Rover', model:'Defender', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:13, co2:200, priceNew:75000, yearMin:2020, yearMax:2026 },
+  'land rover discovery': { brand:'Land Rover', model:'Discovery', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:12, co2:200, priceNew:68000, yearMin:2017, yearMax:2026 },
+  'land rover discovery sport': { brand:'Land Rover', model:'Discovery Sport', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:10, co2:160, priceNew:48000, yearMin:2014, yearMax:2026 },
+  'range rover': { brand:'Range Rover', model:'', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:15, co2:210, priceNew:135000, yearMin:2013, yearMax:2026 },
+  'range rover sport': { brand:'Range Rover', model:'Sport', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:15, co2:195, priceNew:110000, yearMin:2018, yearMax:2026 },
+  'range rover velar': { brand:'Range Rover', model:'Velar', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:12, co2:170, priceNew:75000, yearMin:2017, yearMax:2026 },
+  'range rover evoque': { brand:'Range Rover', model:'Evoque', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:9, co2:160, priceNew:52000, yearMin:2019, yearMax:2026 },
   'jaguar xe': { brand:'Jaguar', model:'XE', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:9, co2:140, priceNew:48000, yearMin:2015, yearMax:2024 },
   'jaguar xf': { brand:'Jaguar', model:'XF', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:10, co2:150, priceNew:58000, yearMin:2015, yearMax:2024 },
   'jaguar f-pace': { brand:'Jaguar', model:'F-Pace', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:170, priceNew:68000, yearMin:2016, yearMax:2026 },
@@ -1233,7 +1233,7 @@ const ADEME_DB = {
   'xpeng g9': { brand:'Xpeng', model:'G9', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:13, co2:0, priceNew:68000, yearMin:2024, yearMax:2026 },
   'xpeng p7': { brand:'Xpeng', model:'P7', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:10, co2:0, priceNew:55000, yearMin:2024, yearMax:2026 },
   'aiways u5': { brand:'Aiways', model:'U5', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:7, co2:0, priceNew:38000, yearMin:2020, yearMax:2024 },
-  'lynk co 01': { brand:'Lynk', model:'Co 01', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:10, co2:40, priceNew:45000, yearMin:2021, yearMax:2026 },
+  'lynk co 01': { brand:'Lynk & Co', model:'01', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:10, co2:40, priceNew:45000, yearMin:2021, yearMax:2026 },
   'polestar 2': { brand:'Polestar', model:'2', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:10, co2:0, priceNew:52000, yearMin:2020, yearMax:2026 },
   'polestar 3': { brand:'Polestar', model:'3', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:13, co2:0, priceNew:85000, yearMin:2024, yearMax:2026 },
   'polestar 4': { brand:'Polestar', model:'4', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:13, co2:0, priceNew:68000, yearMin:2024, yearMax:2026 },
@@ -1263,10 +1263,10 @@ const ADEME_DB = {
   'daf xf': { brand:'Daf', model:'XF', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:24, co2:320, priceNew:135000, yearMin:2017, yearMax:2026 },
   'daf cf': { brand:'Daf', model:'CF', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:20, co2:300, priceNew:110000, yearMin:2013, yearMax:2026 },
   'daf lf': { brand:'Daf', model:'LF', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:18, co2:280, priceNew:75000, yearMin:2014, yearMax:2026 },
-  'renault trucks t': { brand:'Renault', model:'Trucks T', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:24, co2:320, priceNew:130000, yearMin:2014, yearMax:2026 },
-  'renault trucks d': { brand:'Renault', model:'Trucks D', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:18, co2:280, priceNew:80000, yearMin:2014, yearMax:2026 },
-  'renault trucks c': { brand:'Renault', model:'Trucks C', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:20, co2:300, priceNew:95000, yearMin:2014, yearMax:2026 },
-  'renault trucks k': { brand:'Renault', model:'Trucks K', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:24, co2:320, priceNew:135000, yearMin:2015, yearMax:2026 },
+  'renault trucks t': { brand:'Renault Trucks', model:'T', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:24, co2:320, priceNew:130000, yearMin:2014, yearMax:2026 },
+  'renault trucks d': { brand:'Renault Trucks', model:'D', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:18, co2:280, priceNew:80000, yearMin:2014, yearMax:2026 },
+  'renault trucks c': { brand:'Renault Trucks', model:'C', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:20, co2:300, priceNew:95000, yearMin:2014, yearMax:2026 },
+  'renault trucks k': { brand:'Renault Trucks', model:'K', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:24, co2:320, priceNew:135000, yearMin:2015, yearMax:2026 },
   'volvo fh': { brand:'Volvo', model:'FH', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:24, co2:320, priceNew:140000, yearMin:2013, yearMax:2026 },
   'volvo fm': { brand:'Volvo', model:'FM', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:20, co2:300, priceNew:110000, yearMin:2014, yearMax:2026 },
   'volvo fl': { brand:'Volvo', model:'FL', segment:'camion', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:18, co2:280, priceNew:80000, yearMin:2014, yearMax:2026 },
@@ -1317,8 +1317,8 @@ const ADEME_DB = {
   'ferrari portofino': { brand:'Ferrari', model:'Portofino', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:250, priceNew:225000, yearMin:2018, yearMax:2024 },
   'ferrari roma': { brand:'Ferrari', model:'Roma', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:255, priceNew:235000, yearMin:2020, yearMax:2026 },
   'lamborghini urus': { brand:'Lamborghini', model:'Urus', segment:'premium', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:24, co2:330, priceNew:235000, yearMin:2018, yearMax:2026 },
-  'aston martin db11': { brand:'Aston', model:'Martin DB11', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:265, priceNew:205000, yearMin:2017, yearMax:2024 },
-  'aston martin dbx': { brand:'Aston', model:'Martin DBX', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:290, priceNew:205000, yearMin:2020, yearMax:2026 },
+  'aston martin db11': { brand:'Aston Martin', model:'DB11', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:265, priceNew:205000, yearMin:2017, yearMax:2024 },
+  'aston martin dbx': { brand:'Aston Martin', model:'DBX', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:18, co2:290, priceNew:205000, yearMin:2020, yearMax:2026 },
   'chevrolet aveo': { brand:'Chevrolet', model:'Aveo', segment:'citadine', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:128, priceNew:11000, yearMin:2008, yearMax:2015 },
   'chevrolet cruze': { brand:'Chevrolet', model:'Cruze', segment:'compacte', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:6, co2:135, priceNew:18000, yearMin:2009, yearMax:2015 },
   'chevrolet captiva': { brand:'Chevrolet', model:'Captiva', segment:'suv', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:200, priceNew:28000, yearMin:2007, yearMax:2015 },
@@ -1365,8 +1365,8 @@ const ADEME_DB = {
   'daihatsu materia': { brand:'Daihatsu', model:'Materia', segment:'compacte', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:148, priceNew:14000, yearMin:2007, yearMax:2013 },
   'daihatsu trevis': { brand:'Daihatsu', model:'Trevis', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:140, priceNew:11000, yearMin:2006, yearMax:2010 },
   'isuzu trooper': { brand:'Isuzu', model:'Trooper', segment:'suv', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:13, co2:260, priceNew:28000, yearMin:1992, yearMax:2003 },
-  'great wall steed': { brand:'Great', model:'Wall Steed', segment:'pickup', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:230, priceNew:22000, yearMin:2012, yearMax:2020 },
-  'great wall wingle': { brand:'Great', model:'Wall Wingle', segment:'pickup', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:235, priceNew:20000, yearMin:2009, yearMax:2018 },
+  'great wall steed': { brand:'Great Wall', model:'Steed', segment:'pickup', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:230, priceNew:22000, yearMin:2012, yearMax:2020 },
+  'great wall wingle': { brand:'Great Wall', model:'Wingle', segment:'pickup', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:235, priceNew:20000, yearMin:2009, yearMax:2018 },
   'dfsk k01': { brand:'DFSK', model:'K01', segment:'utilitaire', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:160, priceNew:11000, yearMin:2010, yearMax:2022 },
   'bmw active tourer': { brand:'BMW', model:'Active Tourer', segment:'premium', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:128, priceNew:40000, yearMin:2014, yearMax:2026 },
   'bmw gran tourer': { brand:'BMW', model:'Gran Tourer', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:7, co2:135, priceNew:42000, yearMin:2015, yearMax:2022 },
@@ -2534,6 +2534,50 @@ function applyAdemeRefine(plate) {
 window.openAdemeRefine = openAdemeRefine;
 window.applyAdemeRefine = applyAdemeRefine;
 
+// ============================================================
+// SAISIE MANUELLE Marque + Modèle pour déclencher lookup ADEME
+// Utilisé quand Plate Recognizer n'a pas identifié le véhicule
+// (saisie clavier, OCR sans option MMC, échec reconnaissance visuelle)
+// ============================================================
+function updateAdemeModelList() {
+  const brand = document.getElementById('ademeManualBrand').value;
+  const modelSelect = document.getElementById('ademeManualModel');
+  if (!brand) {
+    modelSelect.innerHTML = '<option value="">— Choisir d\'abord la marque —</option>';
+    modelSelect.disabled = true;
+    modelSelect.style.opacity = '0.5';
+    return;
+  }
+  // Filtrer les modèles de cette marque dans ADEME_DB
+  const models = Object.values(ADEME_DB)
+    .filter(v => v.brand === brand)
+    .map(v => v.model)
+    .sort();
+  modelSelect.innerHTML = '<option value="">— Choisir un modèle —</option>' +
+    models.map(m => `<option value="${m}">${m}</option>`).join('');
+  modelSelect.disabled = false;
+  modelSelect.style.opacity = '1';
+}
+
+function applyAdemeManual(plate) {
+  const brand = document.getElementById('ademeManualBrand').value;
+  const model = document.getElementById('ademeManualModel').value;
+  if (!brand || !model) {
+    toast('Sélectionne marque ET modèle');
+    return;
+  }
+  // Relance lookupPlate avec un faux retour Plate Recognizer
+  // pour déclencher le flow ADEME complet (caractéristiques + cote auto)
+  window.lookupPlate(plate, {
+    source: 'manual',
+    makeModel: `${brand} ${model}`,
+    confidence: 1.0,
+  });
+}
+
+window.updateAdemeModelList = updateAdemeModelList;
+window.applyAdemeManual = applyAdemeManual;
+
 function renderNotFound(plate, scanMeta = {}) {
   const chips = metaChips(scanMeta);
   const hasMmc = scanMeta.makeModel || scanMeta.color || scanMeta.vehicleType;
@@ -2631,6 +2675,34 @@ function renderNotFound(plate, scanMeta = {}) {
     ? `➕ Créer fiche : ${scanMeta.makeModel}`
     : '➕ Créer fiche véhicule';
 
+  // ============ SAISIE MANUELLE MARQUE+MODÈLE ============
+  // Permet de déclencher le lookup ADEME quand Plate Recognizer n'a pas
+  // identifié le véhicule (saisie clavier, OCR Tesseract sans MMC, etc.)
+  // Construit deux dropdowns chaînés depuis ADEME_DB.
+  const ademeBrands = [...new Set(Object.values(ADEME_DB).map(v => v.brand))].sort();
+  const manualLookupSection = `
+    <div class="section" style="background:var(--bg-1);border:1px solid var(--hi-vis)40">
+      <div class="section-title" style="color:var(--hi-vis)">🎯 Identifier le véhicule pour calculer la cote</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);line-height:1.5;margin-bottom:14px">
+        Sélectionne marque et modèle pour déclencher le calcul automatique de la cote affinée (caractéristiques techniques ADEME + grille VR LEASECAR + coefficients Réunion).
+      </div>
+
+      <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Marque</label>
+      <select id="ademeManualBrand" onchange="window.updateAdemeModelList && window.updateAdemeModelList()" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:12px">
+        <option value="">— Choisir une marque —</option>
+        ${ademeBrands.map(b => `<option value="${b}">${b}</option>`).join('')}
+      </select>
+
+      <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Modèle</label>
+      <select id="ademeManualModel" disabled style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:14px;opacity:0.5">
+        <option value="">— Choisir d'abord la marque —</option>
+      </select>
+
+      <button class="btn-primary" onclick="window.applyAdemeManual && window.applyAdemeManual('${plate}')" style="width:100%">
+        Calculer la cote affinée
+      </button>
+    </div>`;
+
   el('resultContent').innerHTML = `
     <div class="result-header">
       <div class="result-status warning">
@@ -2650,6 +2722,7 @@ function renderNotFound(plate, scanMeta = {}) {
       ${badges.length ? `<div class="status-bar">${badges.join('')}</div>` : ''}
     </div>
 
+    ${manualLookupSection}
     ${detailSection}
     ${estimation}
 
