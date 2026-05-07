@@ -1,316 +1,2563 @@
-# MATCH! Scanner — Endpoint API pour le Scanner Mobile
-# =====================================================
-# À intégrer dans le backend MATCH! (Scalingo)
-# Développeur responsable : Mathias Cadet / Romain Grau
-# Demandeur : Paja (10Positif / LEASECAR)
-# Date : Mai 2026
-#
-# OBJECTIF :
-# L'app mobile MATCH! Scanner (PWA sur GitHub Pages) doit pouvoir
-# interroger la base MATCH! par numéro d'immatriculation pour
-# afficher la fiche véhicule sur le terrain (parking, livraison, restitution).
-#
-# SPEC FONCTIONNELLE :
-# - Input : plaque d'immatriculation (format SIV : AB-123-CD)
-# - Output : JSON avec toutes les infos véhicule + contrat + locataire
-# - Auth : Bearer token simple (un token statique en variable d'env pour commencer)
-# - CORS : autoriser l'origine GitHub Pages (paja974.github.io)
-# - Si plaque non trouvée : retour 404 { "error": "not_found" }
-#
-# DURÉE ESTIMÉE : 30 min si la table véhicules a déjà un champ immatriculation indexé.
-#
-# =====================================================
 
-# =====================================================
-# OPTION A — Si MATCH! est en Node.js / Express
-# =====================================================
 
-"""
-// --- fichier : routes/scanner.js ---
-
-const express = require('express');
-const router = express.Router();
-const db = require('../models'); // ou ton ORM (Sequelize, Prisma, Knex...)
-
-// Middleware auth simple (token Bearer en variable d'env)
-const SCANNER_TOKEN = process.env.SCANNER_API_TOKEN || 'match-scanner-2026-secret';
-
-function authScanner(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || auth !== `Bearer ${SCANNER_TOKEN}`) {
-    return res.status(401).json({ error: 'unauthorized' });
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>MATCH! Scanner — LEASECAR</title>
+<!-- PWA iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="MATCH! Scan" />
+<meta name="theme-color" content="#0a0b0d" />
+<!-- Icône SVG encodée en base64 — carré jaune avec M! -->
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjRjI2NTIyIi8+PHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtd2VpZ2h0PSI5MDAiIGZvbnQtc2l6ZT0iOTAiIGZpbGw9IiNmZmZmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiPk0hPC90ZXh0Pjwvc3ZnPg==" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23F26522'/><text x='50%25' y='55%25' font-family='monospace' font-weight='900' font-size='50' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>M!</text></svg>" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<style>
+  :root {
+    --bg-0: #0a0b0d; --bg-1: #111316; --bg-2: #1a1d22; --bg-3: #242830;
+    --line: #2d323b; --line-bright: #3d434e;
+    --text-0: #f4f5f7; --text-1: #c5c9d1; --text-2: #888d96; --text-3: #5a5f68;
+    --hi-vis: #F26522; --hi-vis-deep: #D4551A;
+    --signal-green: #34d399; --signal-red: #f87171; --signal-blue: #60a5fa;
+    /* Polices système iOS/Android — fiables, pas de dépendance réseau */
+    --font-mono: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
   }
-  next();
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%; overflow: hidden;
+    background: var(--bg-0); color: var(--text-0);
+    font-family: var(--font-display); font-size: 15px; line-height: 1.4;
+    -webkit-font-smoothing: antialiased; overscroll-behavior: none;
+  }
+  body {
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255, 214, 10, 0.06), transparent 70%), var(--bg-0);
+  }
+  .app {
+    position: relative; width: 100%; height: 100%;
+    max-width: 480px; margin: 0 auto;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
 
-// CORS pour GitHub Pages
-router.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://paja974.github.io');
-  res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
+  .topbar {
+    flex-shrink: 0; padding: 14px 18px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-1); border-bottom: 1px solid var(--line);
+    z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 28px; height: 28px; background: var(--hi-vis); border-radius: 6px;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-weight: 800; font-size: 14px; color: var(--bg-0);
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1; }
+  .brand-name { font-family: var(--font-mono); font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+  .brand-sub { font-family: var(--font-mono); font-size: 9px; color: var(--text-3); margin-top: 3px; letter-spacing: 1px; }
+  .top-actions { display: flex; gap: 8px; align-items: center; }
+  .icon-btn {
+    width: 32px; height: 32px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px;
+    display: grid; place-items: center; cursor: pointer;
+    color: var(--text-1); font-family: var(--font-mono); font-size: 14px; font-weight: 700;
+  }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-2);
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .status-dot {
+    width: 7px; height: 7px; background: var(--signal-green); border-radius: 50%;
+    box-shadow: 0 0 6px var(--signal-green); animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .tabs { flex-shrink: 0; display: flex; background: var(--bg-1); border-bottom: 1px solid var(--line); }
+  .tab {
+    flex: 1; padding: 12px 8px; background: none; border: none;
+    color: var(--text-2); font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.8px; text-transform: uppercase; cursor: pointer;
+    position: relative; transition: color 0.2s;
+  }
+  .tab.active { color: var(--hi-vis); }
+  .tab.active::after {
+    content: ''; position: absolute; bottom: -1px; left: 20%; right: 20%;
+    height: 2px; background: var(--hi-vis);
+  }
+
+  .views { flex: 1; position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: none; }
+  .view.active { display: block; }
+  #view-scan.active { display: flex; flex-direction: column; }
+
+  #view-scan { background: #000; }
+  .camera-stage {
+    position: relative; width: 100%; flex: 1;
+    background: #000; overflow: hidden; min-height: 200px;
+  }
+  #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .camera-placeholder {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--text-2); font-family: var(--font-mono); font-size: 11px;
+    text-align: center; padding: 20px;
+    background: repeating-linear-gradient(45deg, transparent 0 14px, rgba(255,255,255,0.02) 14px 15px), var(--bg-1);
+  }
+
+  .engine-badge {
+    position: absolute; top: 12px; right: 12px;
+    padding: 6px 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    border-radius: 4px; font-family: var(--font-mono); font-size: 9px;
+    color: var(--hi-vis); letter-spacing: 1px; text-transform: uppercase; font-weight: 600;
+    border: 1px solid rgba(255,214,10,0.3); z-index: 5;
+  }
+  .engine-badge.fallback { color: var(--text-2); border-color: var(--line-bright); }
+
+  .scan-overlay { position: absolute; inset: 0; pointer-events: none; }
+  .scan-frame {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 78%; aspect-ratio: 4.5 / 1;
+    border: 2px solid var(--hi-vis); border-radius: 4px;
+    box-shadow: 0 0 0 99999px rgba(0,0,0,0.55), inset 0 0 12px rgba(255,214,10,0.2);
+  }
+  .scan-frame::before, .scan-frame::after {
+    content: ''; position: absolute; width: 18px; height: 18px;
+    border: 3px solid var(--hi-vis);
+  }
+  .scan-frame::before { top: -6px; left: -6px; border-right: none; border-bottom: none; }
+  .scan-frame::after { bottom: -6px; right: -6px; border-left: none; border-top: none; }
+  .scan-frame .corner-tr, .scan-frame .corner-bl {
+    position: absolute; width: 18px; height: 18px; border: 3px solid var(--hi-vis);
+  }
+  .scan-frame .corner-tr { top: -6px; right: -6px; border-left: none; border-bottom: none; }
+  .scan-frame .corner-bl { bottom: -6px; left: -6px; border-right: none; border-top: none; }
+  .scan-line {
+    position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--hi-vis), transparent);
+    box-shadow: 0 0 10px var(--hi-vis);
+    animation: scan-sweep 2.4s ease-in-out infinite; opacity: 0;
+  }
+  .scanning .scan-line { opacity: 1; }
+  @keyframes scan-sweep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(100% - 2px)); } }
+
+  .scan-hint {
+    position: absolute; top: 18px; left: 0; right: 0;
+    text-align: center; font-family: var(--font-mono); font-size: 10px;
+    color: var(--hi-vis); letter-spacing: 1.5px; text-transform: uppercase;
+    text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  }
+
+  .scan-controls {
+    padding: 14px; background: var(--bg-1); border-top: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .btn-primary {
+    width: 100%; padding: 14px;
+    background: var(--hi-vis); color: var(--bg-0); border: none; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+    transition: transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { background: var(--bg-3); color: var(--text-3); cursor: not-allowed; }
+  .btn-primary.scanning { background: var(--bg-3); color: var(--hi-vis); }
+
+  .btn-ghost {
+    width: 100%; padding: 12px; background: transparent;
+    color: var(--text-1); border: 1px solid var(--line-bright); border-radius: 8px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+  }
+  .manual-row { display: flex; gap: 8px; }
+  .manual-input {
+    flex: 1; padding: 12px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text-0); font-family: var(--font-mono); font-size: 16px;
+    font-weight: 700; letter-spacing: 2px; text-align: center;
+    text-transform: uppercase; outline: none;
+  }
+  .manual-input:focus { border-color: var(--hi-vis); }
+  .manual-input::placeholder { color: var(--text-3); letter-spacing: 1.5px; }
+  .btn-search {
+    padding: 0 18px; background: var(--bg-3); border: 1px solid var(--line-bright);
+    color: var(--hi-vis); border-radius: 8px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+
+  #view-result { background: var(--bg-0); }
+  .result-header { padding: 20px 18px 16px; background: var(--bg-1); border-bottom: 1px solid var(--line); }
+  .result-status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--signal-green); margin-bottom: 12px;
+  }
+  .result-status.error { color: var(--signal-red); }
+  .result-status .marker { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+
+  .plate {
+    display: inline-flex; align-items: stretch;
+    border-radius: 5px; overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.6);
+    font-family: var(--font-mono); margin-bottom: 4px;
+  }
+  .plate-band {
+    background: #003399; color: #ffcc00; padding: 8px 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    font-size: 8px; font-weight: 700;
+  }
+  .plate-band .stars { font-size: 10px; line-height: 1; }
+  .plate-band .country { font-size: 11px; }
+  .plate-number {
+    background: #f5f5f0; color: #111; padding: 10px 16px;
+    font-size: 24px; font-weight: 800; letter-spacing: 2px;
+  }
+
+  .vehicle-headline {
+    font-family: var(--font-display); font-size: 26px; font-weight: 700;
+    letter-spacing: -0.5px; margin-top: 8px; line-height: 1.15;
+  }
+  .vehicle-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-top: 4px; }
+
+  .ocr-meta { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .meta-chip {
+    font-family: var(--font-mono); font-size: 9px;
+    padding: 3px 7px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 3px; color: var(--text-2);
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .meta-chip strong { color: var(--text-0); margin-left: 4px; }
+
+  .status-bar { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+  .badge {
+    padding: 4px 8px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 4px;
+    font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-1);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .badge.active { color: var(--signal-green); border-color: rgba(52, 211, 153, 0.4); }
+  .badge.warning { color: var(--hi-vis); border-color: rgba(255, 214, 10, 0.4); }
+  .badge.danger { color: var(--signal-red); border-color: rgba(248, 113, 113, 0.4); }
+
+  .section { padding: 18px; border-bottom: 1px solid var(--line); }
+  .section-title {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-3);
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .data-cell { display: flex; flex-direction: column; gap: 3px; }
+  .data-cell.full { grid-column: 1 / -1; }
+  .data-label {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 1px; text-transform: uppercase; color: var(--text-3);
+  }
+  .data-value { font-family: var(--font-mono); font-size: 14px; color: var(--text-0); font-weight: 500; }
+  .data-value.highlight { color: var(--hi-vis); font-weight: 700; }
+
+  .progress { margin-top: 10px; height: 4px; background: var(--bg-2); border-radius: 2px; overflow: hidden; }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, var(--signal-green), var(--hi-vis));
+    transition: width 0.6s ease;
+  }
+  .progress-meta {
+    display: flex; justify-content: space-between; margin-top: 6px;
+    font-family: var(--font-mono); font-size: 9px; color: var(--text-3);
+  }
+
+  .actions-row { padding: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .empty-state { padding: 60px 24px; text-align: center; }
+  .empty-icon { font-size: 36px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .empty-text { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); line-height: 1.6; }
+
+  .history-list { padding: 12px; }
+  .history-item {
+    display: flex; align-items: center; gap: 14px; padding: 14px;
+    background: var(--bg-1); border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s, transform 0.1s;
+  }
+  .history-item:active { transform: scale(0.99); }
+  .history-plate {
+    background: #f5f5f0; color: #111; padding: 6px 10px; border-radius: 4px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 800;
+    letter-spacing: 1.5px; flex-shrink: 0;
+  }
+  .history-info { flex: 1; min-width: 0; }
+  .history-model {
+    font-family: var(--font-display); font-weight: 600; font-size: 14px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .history-time { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+  .history-status {
+    font-family: var(--font-mono); font-size: 9px; padding: 3px 7px; border-radius: 3px;
+    text-transform: uppercase; font-weight: 600;
+  }
+  .history-status.found { background: rgba(52, 211, 153, 0.15); color: var(--signal-green); }
+  .history-status.not-found { background: rgba(248, 113, 113, 0.15); color: var(--signal-red); }
+
+  .toast {
+    position: fixed; bottom: 30px; left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--bg-3); color: var(--text-0);
+    padding: 12px 18px; border-radius: 8px; border: 1px solid var(--line-bright);
+    font-family: var(--font-mono); font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    transition: transform 0.3s ease; z-index: 1000;
+    max-width: 90%; text-align: center;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .ocr-progress {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+    border-radius: 6px; padding: 8px 12px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--hi-vis);
+    display: none; z-index: 5;
+  }
+  .ocr-progress.show { display: block; }
+  .ocr-progress-bar { margin-top: 4px; height: 2px; background: rgba(255,214,10,0.2); border-radius: 1px; overflow: hidden; }
+  .ocr-progress-fill { height: 100%; background: var(--hi-vis); width: 0%; transition: width 0.3s; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+    z-index: 100; display: none;
+    align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--bg-1); border-top: 1px solid var(--line-bright);
+    border-radius: 16px 16px 0 0;
+    width: 100%; max-width: 480px;
+    padding: 24px 20px 32px; max-height: 85vh; overflow-y: auto;
+    animation: slideUp 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-handle { width: 36px; height: 4px; background: var(--line-bright); border-radius: 2px; margin: 0 auto 16px; }
+  .modal-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .modal-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-bottom: 22px; }
+
+  .field { margin-bottom: 18px; }
+  .field-label {
+    display: block; font-family: var(--font-mono); font-size: 10px;
+    color: var(--text-2); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .field-input, .field-select {
+    width: 100%; padding: 12px 14px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text-0); font-family: var(--font-mono); font-size: 13px; outline: none;
+  }
+  .field-input:focus, .field-select:focus { border-color: var(--hi-vis); }
+  .field-help { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+  .field-help a { color: var(--hi-vis); text-decoration: none; border-bottom: 1px dashed var(--hi-vis); }
+
+  .switch-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+  }
+  .switch-row:last-child { border-bottom: none; }
+  .switch-label { font-family: var(--font-display); font-size: 14px; font-weight: 500; }
+  .switch-desc { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+  .switch {
+    position: relative; width: 42px; height: 24px;
+    background: var(--bg-3); border-radius: 12px; border: 1px solid var(--line);
+    cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+  }
+  .switch.on { background: var(--hi-vis); border-color: var(--hi-vis); }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; background: var(--text-0); border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .switch.on::after { transform: translateX(18px); background: var(--bg-0); }
+
+  .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
+
+  .quota-display { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 10px; }
+  .quota-line { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; margin-bottom: 6px; }
+  .quota-bar { height: 4px; background: var(--bg-3); border-radius: 2px; overflow: hidden; }
+  .quota-fill { height: 100%; background: var(--hi-vis); transition: width 0.4s; }
+  .quota-fill.warning { background: var(--hi-vis-deep); }
+  .quota-fill.danger { background: var(--signal-red); }
+
+  #canvas { display: none; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">M!</div>
+      <div class="brand-text">
+        <div class="brand-name">MATCH! SCAN</div>
+        <div class="brand-sub" id="engineSubtitle">LEASECAR · OCR LOCAL</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        <span id="quotaPill">—</span>
+      </div>
+      <button class="icon-btn" id="btnSettings" title="Réglages">⚙</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="scan">Scanner</button>
+    <button class="tab" data-view="result">Fiche</button>
+    <button class="tab" data-view="appraisal">Reprise</button>
+    <button class="tab" data-view="history">Historique</button>
+  </nav>
+
+  <div class="views">
+
+    <section class="view active" id="view-scan">
+      <div class="camera-stage" id="cameraStage">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="engine-badge fallback" id="engineBadge">Tesseract local</div>
+        <div class="camera-placeholder" id="cameraPlaceholder">
+          Caméra non initialisée<br/>
+          <small style="color: var(--text-3); margin-top: 8px; display: block;">
+            Appuyez sur "Démarrer la caméra"
+          </small>
+        </div>
+        <div class="scan-overlay" id="scanOverlay" style="display:none">
+          <div class="scan-hint">Cadrer la plaque</div>
+          <div class="scan-frame">
+            <div class="corner-tr"></div>
+            <div class="corner-bl"></div>
+            <div class="scan-line"></div>
+          </div>
+        </div>
+        <div class="ocr-progress" id="ocrProgress">
+          <div id="ocrProgressText">Analyse OCR…</div>
+          <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocrProgressFill"></div></div>
+        </div>
+      </div>
+
+      <div class="scan-controls">
+        <button class="btn-primary" id="btnAction">
+          <span id="btnActionText">Démarrer la caméra</span>
+        </button>
+        <div class="manual-row">
+          <input type="text" class="manual-input" id="manualPlate" placeholder="AB-123-CD" maxlength="9" />
+          <button class="btn-search" id="btnManual">CHERCHER</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-result">
+      <div id="resultContent">
+        <div class="empty-state">
+          <div class="empty-icon">⊙</div>
+          <div class="empty-title">Aucun véhicule sélectionné</div>
+          <div class="empty-text">Scannez une plaque ou saisissez-la<br/>manuellement depuis l'onglet Scanner</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-appraisal">
+      <div id="appraisalContent">
+        <div style="padding: 18px 18px 0">
+          <div style="font-family: var(--font-display); font-size: 22px; font-weight: 700; margin-bottom: 4px">Évaluation de reprise</div>
+          <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-bottom: 18px">Calcul VR · Fourchette négo · Simulation LLD VO</div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Étape 1 · Identifier le véhicule</div>
+          <div class="manual-row" style="margin-bottom: 14px">
+            <input type="text" class="manual-input" id="appraisalPlate" placeholder="AB-123-CD" maxlength="9" />
+            <button class="btn-search" id="btnAppraisalLookup">REGCHECK</button>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); line-height: 1.5; margin-bottom: 8px">
+            Le bouton REGCHECK consomme 1 crédit sur ton compte regcheck.org.uk pour récupérer marque, modèle, énergie, date MEC.<br/>
+            Tu peux aussi saisir manuellement les champs ci-dessous.
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Étape 2 · Données véhicule</div>
+          <div class="data-grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="data-cell">
+              <label class="data-label">Marque</label>
+              <input type="text" class="field-input" id="ap_brand" placeholder="Renault" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Modèle</label>
+              <input type="text" class="field-input" id="ap_model" placeholder="Captur" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Énergie</label>
+              <select class="field-select" id="ap_energy">
+                <option value="ESSENCE">Essence</option>
+                <option value="DIESEL">Diesel</option>
+                <option value="HYBRIDE">Hybride</option>
+                <option value="ELECTRIQUE">Électrique</option>
+              </select>
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Année MEC</label>
+              <input type="number" class="field-input" id="ap_year" placeholder="2021" min="1990" max="2030" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Kilométrage actuel</label>
+              <input type="number" class="field-input" id="ap_km" placeholder="65000" min="0" max="500000" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Prix neuf catalogue TTC</label>
+              <input type="number" class="field-input" id="ap_price" placeholder="26000" min="0" />
+            </div>
+            <div class="data-cell">
+              <label class="data-label">État du véhicule</label>
+              <select class="field-select" id="ap_condition">
+                <option value="excellent">Excellent (comme neuf)</option>
+                <option value="bon" selected>Bon (usure normale)</option>
+                <option value="moyen">Moyen (défauts visibles)</option>
+                <option value="mauvais">Mauvais (réparations requises)</option>
+              </select>
+            </div>
+            <div class="data-cell">
+              <label class="data-label">Segment</label>
+              <select class="field-select" id="ap_segment">
+                <option value="citadine">Citadine (Clio, 208, C3…)</option>
+                <option value="compacte" selected>Compacte (Mégane, 308…)</option>
+                <option value="suv">SUV / Crossover</option>
+                <option value="berline">Berline (508, Classe C…)</option>
+                <option value="utilitaire">Utilitaire (Trafic, Expert…)</option>
+                <option value="premium">Premium (BMW, Audi, Mercedes)</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 10px; line-height: 1.5">
+            💡 Le prix neuf est estimé automatiquement après lookup. Tu peux le corriger.
+          </div>
+        </div>
+
+        <div class="section" style="text-align: center">
+          <button class="btn-primary" id="btnComputeAppraisal" style="max-width: 280px; margin: 0 auto">
+            Calculer l'évaluation
+          </button>
+        </div>
+
+        <div id="appraisalResult"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-history">
+      <div class="history-list" id="historyList">
+        <div class="empty-state">
+          <div class="empty-icon">⊞</div>
+          <div class="empty-title">Aucun scan</div>
+          <div class="empty-text">L'historique des plaques scannées apparaîtra ici</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Réglages</div>
+    <div class="modal-subtitle">Moteur de reconnaissance & API</div>
+
+    <div class="field">
+      <label class="field-label">Token API Plate Recognizer</label>
+      <input type="password" class="field-input" id="apiToken" placeholder="abcdef123456…" autocomplete="off" />
+      <div class="field-help">
+        Active la reconnaissance haute précision (95%+). Free tier : 2500 lookups/mois sans CB.
+        Crée un compte sur <a href="https://platerecognizer.com" target="_blank">platerecognizer.com</a>
+        puis copie le token depuis le dashboard.
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Région des plaques</label>
+      <select class="field-select" id="apiRegion">
+        <option value="fr">France (toutes)</option>
+        <option value="">Auto-détection</option>
+      </select>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <div class="switch-label">Make / Model / Color</div>
+        <div class="switch-desc">+50% du coût · marque, modèle, couleur</div>
+      </div>
+      <div class="switch" id="switchMmc"></div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Mode strict région</label>
+      <div class="switch-row" style="border:none; padding: 0">
+        <div>
+          <div class="switch-label" style="font-size:12px">Mode strict région</div>
+          <div class="switch-desc">Rejette les plaques non-françaises</div>
+        </div>
+        <div class="switch" id="switchStrict"></div>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line)">
+      <label class="field-label">Username regcheck.org.uk (mode Reprise)</label>
+      <input type="text" class="field-input" id="regcheckUsername" placeholder="ton-username-regcheck" autocomplete="off" />
+      <div class="field-help">
+        Pour le mode <strong>Évaluation reprise</strong>. Compte gratuit sur
+        <a href="https://www.regcheck.org.uk" target="_blank">regcheck.org.uk</a>
+        avec 10 crédits offerts pour tester.
+      </div>
+    </div>
+
+    <div id="quotaWrap" style="display:none">
+      <label class="field-label" style="margin-top: 16px">Quota mensuel</label>
+      <div class="quota-display">
+        <div class="quota-line">
+          <span id="quotaUsed">—</span>
+          <span id="quotaTotal" style="color: var(--text-2)">—</span>
+        </div>
+        <div class="quota-bar"><div class="quota-fill" id="quotaFill" style="width: 0%"></div></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" id="btnTestApi">Tester</button>
+      <button class="btn-primary" id="btnSaveSettings" style="flex: 1.5">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+<div class="toast" id="toast"></div>
+
+<script>
+const MATCH_DB = {
+  'AB-123-CD': { plate: 'AB-123-CD', brand: 'Renault', model: 'Clio V', version: '1.0 TCe 90 Equilibre', energy: 'Essence', fuelColor: '#e8a845', color: 'Blanc Glacier', firstReg: '14/03/2024', vin: 'VF1RJB00X70123456', status: 'En location', statusType: 'active', customer: 'CABINET DUPONT & ASSOCIÉS', contractRef: 'LLD-2024-00831', contractStart: '15/03/2024', contractEnd: '14/03/2027', duration: '36 mois', monthlyRent: '289,00 €', currentKm: 28450, contractKm: 60000, residualValue: '8 920,00 €', nextMaintenance: '30 000 km', location: 'Saint-Denis (974)' },
+  'EF-456-GH': { plate: 'EF-456-GH', brand: 'Peugeot', model: '3008', version: 'Hybrid 225 GT', energy: 'Hybride', fuelColor: '#34d399', color: 'Gris Artense', firstReg: '02/09/2023', vin: 'VF3MCYHZRPS012345', status: 'En location', statusType: 'active', customer: 'TRANSPORTS PAYET SARL', contractRef: 'LLD-2023-00612', contractStart: '05/09/2023', contractEnd: '04/09/2026', duration: '36 mois', monthlyRent: '512,00 €', currentKm: 47820, contractKm: 90000, residualValue: '14 250,00 €', nextMaintenance: '50 000 km', location: 'Saint-Pierre (974)' },
+  'IJ-789-KL': { plate: 'IJ-789-KL', brand: 'Tesla', model: 'Model 3', version: 'Long Range AWD', energy: 'Électrique', fuelColor: '#60a5fa', color: 'Pearl White', firstReg: '21/06/2024', vin: 'LRW3F7FA1NC123456', status: 'Restitution prévue', statusType: 'warning', customer: 'IMMOBILIÈRE OCÉAN INDIEN', contractRef: 'LLD-2024-01024', contractStart: '25/06/2024', contractEnd: '24/06/2026', duration: '24 mois', monthlyRent: '745,00 €', currentKm: 31200, contractKm: 40000, residualValue: '28 100,00 €', nextMaintenance: 'Suivi OTA', location: 'Sainte-Marie (974)' },
+  'MN-321-OP': { plate: 'MN-321-OP', brand: 'Toyota', model: 'Hilux', version: '2.8 D-4D 204 Invincible', energy: 'Diesel', fuelColor: '#a78bfa', color: 'Noir Attitude', firstReg: '11/01/2023', vin: 'AHTFR22G609012345', status: 'En location', statusType: 'active', customer: 'BTP RÉUNION CONSTRUCTION', contractRef: 'LLD-2023-00188', contractStart: '15/01/2023', contractEnd: '14/01/2027', duration: '48 mois', monthlyRent: '658,00 €', currentKm: 89400, contractKm: 120000, residualValue: '19 800,00 €', nextMaintenance: '90 000 km', location: 'Le Port (974)' },
+  'QR-654-ST': { plate: 'QR-654-ST', brand: 'Citroën', model: 'C3', version: '1.2 PureTech 83 Plus', energy: 'Essence', fuelColor: '#e8a845', color: 'Rouge Elixir', firstReg: '08/11/2022', vin: 'VF7SXHMZ6NT123456', status: 'Sinistré', statusType: 'danger', customer: 'PARTICULIER · M. HOARAU', contractRef: 'LLD-2022-00945', contractStart: '12/11/2022', contractEnd: '11/11/2025', duration: '36 mois', monthlyRent: '215,00 €', currentKm: 54300, contractKm: 60000, residualValue: '6 450,00 €', nextMaintenance: 'En attente expertise', location: 'Saint-Paul (974)' },
+};
+
+// ============================================================
+// SIV_DB — DONNÉES SIMULÉES POUR LA DÉMO
+// Représente ce qu'une vraie API plaque (ex: immatriculationapi.com,
+// AAA-Data) renverrait pour des véhicules HORS flotte LEASECAR.
+// En prod, ces données viendraient d'un appel API.
+// ============================================================
+const SIV_DB = {
+  // === PROSPECTS chauds (en propriété, véhicules récents) ===
+  'AA-100-BB': {
+    plate: 'AA-100-BB',
+    brand: 'Volkswagen', model: 'Tiguan', version: '2.0 TDI 150 Life',
+    energy: 'Diesel', co2: 142, power: 110, fiscalPower: 8,
+    firstReg: '18/05/2021', age: 4.0,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne morale (SIREN renseigné)',
+    leadScore: 'A', leadReason: '4 ans = pic conversion LLD',
+  },
+  'CC-200-DD': {
+    plate: 'CC-200-DD',
+    brand: 'Audi', model: 'Q5', version: '40 TDI 204 S Line',
+    energy: 'Diesel', co2: 158, power: 150, fiscalPower: 11,
+    firstReg: '03/11/2020', age: 4.5,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne morale',
+    leadScore: 'A+', leadReason: 'Premium 4-5 ans, fort potentiel renouvellement',
+  },
+  'EE-300-FF': {
+    plate: 'EE-300-FF',
+    brand: 'Renault', model: 'Trafic', version: '2.0 dCi 150 L2H1',
+    energy: 'Diesel', co2: 195, power: 110, fiscalPower: 8,
+    firstReg: '22/02/2020', age: 5.2,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne morale',
+    leadScore: 'A', leadReason: 'VU pro >5 ans, candidat conversion LLD flotte',
+  },
+  // === DÉJÀ EN LLD ailleurs (à challenger au renouvellement) ===
+  'GG-400-HH': {
+    plate: 'GG-400-HH',
+    brand: 'BMW', model: 'X3', version: 'xDrive30e M Sport',
+    energy: 'Hybride rechargeable', co2: 49, power: 215, fiscalPower: 13,
+    firstReg: '12/09/2023', age: 1.6,
+    financingType: 'LLD', financingLabel: 'Location Longue Durée',
+    leaser: 'ARVAL France',
+    leadScore: 'B', leadReason: 'LLD ARVAL, à challenger au renouvellement (2026)',
+  },
+  'II-500-JJ': {
+    plate: 'II-500-JJ',
+    brand: 'Peugeot', model: '508', version: 'PSE Hybrid 360',
+    energy: 'Hybride rechargeable', co2: 46, power: 265, fiscalPower: 12,
+    firstReg: '28/04/2022', age: 3.0,
+    financingType: 'LLD', financingLabel: 'Location Longue Durée',
+    leaser: 'ALD Automotive',
+    leadScore: 'B+', leadReason: 'LLD ALD fin 2025, contact 6 mois avant',
+  },
+  // === PROSPECTS tièdes (LCB, LCL = location courte/avec option d'achat) ===
+  'KK-600-LL': {
+    plate: 'KK-600-LL',
+    brand: 'Mercedes', model: 'Classe C', version: '220d AMG Line',
+    energy: 'Diesel', co2: 138, power: 147, fiscalPower: 9,
+    firstReg: '15/07/2022', age: 2.8,
+    financingType: 'LCB', financingLabel: 'Location avec option d\'achat',
+    leaser: 'Mercedes-Benz Financial',
+    leadScore: 'C', leadReason: 'LOA, propriétaire potentiel à fin de contrat',
+  },
+  // === PROSPECT FROID (véhicule trop récent ou trop vieux) ===
+  'MM-700-NN': {
+    plate: 'MM-700-NN',
+    brand: 'Dacia', model: 'Sandero', version: '1.0 SCe 65 Essential',
+    energy: 'Essence', co2: 122, power: 49, fiscalPower: 4,
+    firstReg: '04/11/2024', age: 0.5,
+    financingType: 'PROPRIETE', financingLabel: 'Propriété privée',
+    owner: 'Personne physique',
+    leadScore: 'D', leadReason: 'Véhicule trop récent, à recontacter dans 3 ans',
+  },
+};
+
+// ============================================================
+// ADEME_DB — Caractéristiques techniques par marque + modèle
+// Source : ADEME / Carlabelling / data.gouv.fr (Licence Ouverte)
+// Indexée par 'marque modèle' en minuscules (format Plate Recognizer)
+// Utilisée quand une plaque scannée n'est PAS dans MATCH! (flotte LEASECAR)
+// ni dans SIV_DB : on extrait la marque/modèle du retour Plate Recognizer
+// et on enrichit avec les caractéristiques techniques officielles.
+// ============================================================
+const ADEME_DB = {
+  'renault clio': { brand:'Renault', model:'Clio', segment:'citadine', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:110, priceNew:21000, yearMin:2019, yearMax:2026 },
+  'renault captur': { brand:'Renault', model:'Captur', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:105, priceNew:26000, yearMin:2019, yearMax:2026 },
+  'renault megane': { brand:'Renault', model:'Megane', segment:'compacte', energies:['ESSENCE','DIESEL','ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:5, co2:0, priceNew:36000, yearMin:2022, yearMax:2026 },
+  'renault kadjar': { brand:'Renault', model:'Kadjar', segment:'suv', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:6, co2:135, priceNew:29000, yearMin:2015, yearMax:2022 },
+  'renault austral': { brand:'Renault', model:'Austral', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:105, priceNew:38000, yearMin:2022, yearMax:2026 },
+  'renault scenic': { brand:'Renault', model:'Scenic', segment:'compacte', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:7, co2:0, priceNew:40000, yearMin:2024, yearMax:2026 },
+  'renault trafic': { brand:'Renault', model:'Trafic', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:8, co2:195, priceNew:34000, yearMin:2014, yearMax:2026 },
+  'renault master': { brand:'Renault', model:'Master', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:215, priceNew:42000, yearMin:2010, yearMax:2026 },
+  'renault kangoo': { brand:'Renault', model:'Kangoo', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:5, co2:135, priceNew:24000, yearMin:2008, yearMax:2026 },
+  'renault twingo': { brand:'Renault', model:'Twingo', segment:'citadine', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:108, priceNew:15000, yearMin:2014, yearMax:2024 },
+  'renault zoe': { brand:'Renault', model:'Zoe', segment:'citadine', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:3, co2:0, priceNew:32000, yearMin:2013, yearMax:2024 },
+  'renault arkana': { brand:'Renault', model:'Arkana', segment:'suv', energies:['HYBRIDE','ESSENCE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:108, priceNew:31000, yearMin:2021, yearMax:2026 },
+  'renault espace': { brand:'Renault', model:'Espace', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:108, priceNew:45000, yearMin:2023, yearMax:2026 },
+  'renault express': { brand:'Renault', model:'Express', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:5, co2:135, priceNew:18500, yearMin:2021, yearMax:2026 },
+  'dacia sandero': { brand:'Dacia', model:'Sandero', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:120, priceNew:15000, yearMin:2008, yearMax:2026 },
+  'dacia duster': { brand:'Dacia', model:'Duster', segment:'suv', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:135, priceNew:21000, yearMin:2010, yearMax:2026 },
+  'dacia logan': { brand:'Dacia', model:'Logan', segment:'berline', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:120, priceNew:13500, yearMin:2004, yearMax:2024 },
+  'dacia spring': { brand:'Dacia', model:'Spring', segment:'citadine', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:3, co2:0, priceNew:18000, yearMin:2021, yearMax:2026 },
+  'dacia jogger': { brand:'Dacia', model:'Jogger', segment:'compacte', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:127, priceNew:18500, yearMin:2022, yearMax:2026 },
+  'dacia bigster': { brand:'Dacia', model:'Bigster', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:120, priceNew:25000, yearMin:2025, yearMax:2026 },
+  'peugeot 208': { brand:'Peugeot', model:'208', segment:'citadine', energies:['ESSENCE','DIESEL','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:108, priceNew:22000, yearMin:2019, yearMax:2026 },
+  'peugeot 2008': { brand:'Peugeot', model:'2008', segment:'suv', energies:['ESSENCE','DIESEL','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:118, priceNew:27000, yearMin:2019, yearMax:2026 },
+  'peugeot 308': { brand:'Peugeot', model:'308', segment:'compacte', energies:['ESSENCE','DIESEL','HYBRIDE','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:5, co2:118, priceNew:30000, yearMin:2021, yearMax:2026 },
+  'peugeot 3008': { brand:'Peugeot', model:'3008', segment:'suv', energies:['ESSENCE','DIESEL','HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:126, priceNew:36000, yearMin:2016, yearMax:2026 },
+  'peugeot 5008': { brand:'Peugeot', model:'5008', segment:'suv', energies:['DIESEL','HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:40000, yearMin:2016, yearMax:2026 },
+  'peugeot 408': { brand:'Peugeot', model:'408', segment:'berline', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:108, priceNew:36000, yearMin:2022, yearMax:2026 },
+  'peugeot 508': { brand:'Peugeot', model:'508', segment:'berline', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:9, co2:118, priceNew:42000, yearMin:2018, yearMax:2026 },
+  'peugeot partner': { brand:'Peugeot', model:'Partner', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:5, co2:140, priceNew:21000, yearMin:2018, yearMax:2026 },
+  'peugeot expert': { brand:'Peugeot', model:'Expert', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:160, priceNew:30000, yearMin:2016, yearMax:2026 },
+  'peugeot boxer': { brand:'Peugeot', model:'Boxer', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:9, co2:210, priceNew:35000, yearMin:2014, yearMax:2026 },
+  'peugeot rifter': { brand:'Peugeot', model:'Rifter', segment:'compacte', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:5, co2:135, priceNew:24000, yearMin:2018, yearMax:2026 },
+  'citroen c3': { brand:'Citroen', model:'C3', segment:'citadine', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:115, priceNew:17500, yearMin:2016, yearMax:2026 },
+  'citroen c3 aircross': { brand:'Citroen', model:'C3 Aircross', segment:'suv', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:21000, yearMin:2017, yearMax:2026 },
+  'citroen c4': { brand:'Citroen', model:'C4', segment:'compacte', energies:['ESSENCE','DIESEL','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:26000, yearMin:2020, yearMax:2026 },
+  'citroen c5': { brand:'Citroen', model:'C5', segment:'suv', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:36000, yearMin:2021, yearMax:2026 },
+  'citroen berlingo': { brand:'Citroen', model:'Berlingo', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:5, co2:140, priceNew:21000, yearMin:2018, yearMax:2026 },
+  'citroen jumpy': { brand:'Citroen', model:'Jumpy', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:160, priceNew:30000, yearMin:2016, yearMax:2026 },
+  'citroen jumper': { brand:'Citroen', model:'Jumper', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:9, co2:210, priceNew:34000, yearMin:2014, yearMax:2026 },
+  'toyota yaris': { brand:'Toyota', model:'Yaris', segment:'citadine', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:92, priceNew:22000, yearMin:2020, yearMax:2026 },
+  'toyota yaris cross': { brand:'Toyota', model:'Yaris Cross', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:102, priceNew:27000, yearMin:2021, yearMax:2026 },
+  'toyota corolla': { brand:'Toyota', model:'Corolla', segment:'compacte', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:102, priceNew:29000, yearMin:2019, yearMax:2026 },
+  'toyota chr': { brand:'Toyota', model:'CHR', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:110, priceNew:31000, yearMin:2017, yearMax:2026 },
+  'toyota c-hr': { brand:'Toyota', model:'C-HR', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:110, priceNew:31000, yearMin:2017, yearMax:2026 },
+  'toyota rav4': { brand:'Toyota', model:'RAV4', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:8, co2:126, priceNew:42000, yearMin:2019, yearMax:2026 },
+  'toyota hilux': { brand:'Toyota', model:'Hilux', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:9, co2:222, priceNew:42000, yearMin:2016, yearMax:2026 },
+  'toyota land cruiser': { brand:'Toyota', model:'Land Cruiser', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:11, co2:238, priceNew:75000, yearMin:2009, yearMax:2026 },
+  'toyota aygo': { brand:'Toyota', model:'Aygo', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:3, co2:108, priceNew:15000, yearMin:2014, yearMax:2026 },
+  'toyota proace': { brand:'Toyota', model:'Proace', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:160, priceNew:31000, yearMin:2016, yearMax:2026 },
+  'volkswagen polo': { brand:'Volkswagen', model:'Polo', segment:'citadine', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:110, priceNew:22000, yearMin:2017, yearMax:2026 },
+  'volkswagen golf': { brand:'Volkswagen', model:'Golf', segment:'compacte', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:118, priceNew:29000, yearMin:2019, yearMax:2026 },
+  'volkswagen t-roc': { brand:'Volkswagen', model:'T-Roc', segment:'suv', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:125, priceNew:30000, yearMin:2017, yearMax:2026 },
+  'volkswagen tiguan': { brand:'Volkswagen', model:'Tiguan', segment:'suv', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:8, co2:142, priceNew:40000, yearMin:2016, yearMax:2026 },
+  'volkswagen passat': { brand:'Volkswagen', model:'Passat', segment:'berline', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:8, co2:128, priceNew:40000, yearMin:2014, yearMax:2026 },
+  'volkswagen touran': { brand:'Volkswagen', model:'Touran', segment:'compacte', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:130, priceNew:33000, yearMin:2015, yearMax:2026 },
+  'volkswagen id.3': { brand:'Volkswagen', model:'ID.3', segment:'compacte', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:6, co2:0, priceNew:40000, yearMin:2020, yearMax:2026 },
+  'volkswagen id.4': { brand:'Volkswagen', model:'ID.4', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:7, co2:0, priceNew:47000, yearMin:2021, yearMax:2026 },
+  'volkswagen caddy': { brand:'Volkswagen', model:'Caddy', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:5, co2:140, priceNew:24000, yearMin:2015, yearMax:2026 },
+  'volkswagen transporter': { brand:'Volkswagen', model:'Transporter', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:7, co2:175, priceNew:36000, yearMin:2015, yearMax:2026 },
+  'audi a1': { brand:'Audi', model:'A1', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:118, priceNew:29000, yearMin:2018, yearMax:2026 },
+  'audi a3': { brand:'Audi', model:'A3', segment:'premium', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:6, co2:118, priceNew:35000, yearMin:2020, yearMax:2026 },
+  'audi a4': { brand:'Audi', model:'A4', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:8, co2:128, priceNew:45000, yearMin:2015, yearMax:2024 },
+  'audi a5': { brand:'Audi', model:'A5', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:9, co2:138, priceNew:52000, yearMin:2016, yearMax:2026 },
+  'audi a6': { brand:'Audi', model:'A6', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:10, co2:138, priceNew:62000, yearMin:2018, yearMax:2026 },
+  'audi q2': { brand:'Audi', model:'Q2', segment:'premium', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:6, co2:128, priceNew:34000, yearMin:2016, yearMax:2026 },
+  'audi q3': { brand:'Audi', model:'Q3', segment:'premium', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:135, priceNew:42000, yearMin:2018, yearMax:2026 },
+  'audi q5': { brand:'Audi', model:'Q5', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:158, priceNew:58000, yearMin:2017, yearMax:2026 },
+  'audi q7': { brand:'Audi', model:'Q7', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:13, co2:175, priceNew:80000, yearMin:2015, yearMax:2026 },
+  'audi e-tron': { brand:'Audi', model:'e-tron', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:12, co2:0, priceNew:75000, yearMin:2019, yearMax:2026 },
+  'bmw serie 1': { brand:'BMW', model:'Serie 1', segment:'premium', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:6, co2:120, priceNew:35000, yearMin:2019, yearMax:2026 },
+  'bmw serie 2': { brand:'BMW', model:'Serie 2', segment:'premium', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:125, priceNew:40000, yearMin:2014, yearMax:2026 },
+  'bmw serie 3': { brand:'BMW', model:'Serie 3', segment:'premium', energies:['DIESEL','HYBRIDE','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:8, co2:128, priceNew:48000, yearMin:2018, yearMax:2026 },
+  'bmw serie 4': { brand:'BMW', model:'Serie 4', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:9, co2:138, priceNew:55000, yearMin:2020, yearMax:2026 },
+  'bmw serie 5': { brand:'BMW', model:'Serie 5', segment:'premium', energies:['DIESEL','HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:10, co2:135, priceNew:68000, yearMin:2017, yearMax:2026 },
+  'bmw x1': { brand:'BMW', model:'X1', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:130, priceNew:42000, yearMin:2015, yearMax:2026 },
+  'bmw x2': { brand:'BMW', model:'X2', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:135, priceNew:45000, yearMin:2018, yearMax:2026 },
+  'bmw x3': { brand:'BMW', model:'X3', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:150, priceNew:58000, yearMin:2017, yearMax:2026 },
+  'bmw x4': { brand:'BMW', model:'X4', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:11, co2:158, priceNew:62000, yearMin:2018, yearMax:2026 },
+  'bmw x5': { brand:'BMW', model:'X5', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:13, co2:165, priceNew:85000, yearMin:2018, yearMax:2026 },
+  'bmw i3': { brand:'BMW', model:'i3', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:4, co2:0, priceNew:40000, yearMin:2013, yearMax:2022 },
+  'bmw i4': { brand:'BMW', model:'i4', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:10, co2:0, priceNew:62000, yearMin:2021, yearMax:2026 },
+  'mercedes classe a': { brand:'Mercedes', model:'Classe A', segment:'premium', energies:['DIESEL','ESSENCE','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:125, priceNew:38000, yearMin:2018, yearMax:2026 },
+  'mercedes classe b': { brand:'Mercedes', model:'Classe B', segment:'premium', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:128, priceNew:40000, yearMin:2018, yearMax:2026 },
+  'mercedes classe c': { brand:'Mercedes', model:'Classe C', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:9, co2:138, priceNew:52000, yearMin:2018, yearMax:2026 },
+  'mercedes classe e': { brand:'Mercedes', model:'Classe E', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:150, priceNew:68000, yearMin:2016, yearMax:2026 },
+  'mercedes gla': { brand:'Mercedes', model:'GLA', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:8, co2:135, priceNew:42000, yearMin:2020, yearMax:2026 },
+  'mercedes glb': { brand:'Mercedes', model:'GLB', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:8, co2:140, priceNew:48000, yearMin:2019, yearMax:2026 },
+  'mercedes glc': { brand:'Mercedes', model:'GLC', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:11, co2:155, priceNew:62000, yearMin:2015, yearMax:2026 },
+  'mercedes gle': { brand:'Mercedes', model:'GLE', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:13, co2:172, priceNew:80000, yearMin:2019, yearMax:2026 },
+  'mercedes vito': { brand:'Mercedes', model:'Vito', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:8, co2:175, priceNew:42000, yearMin:2014, yearMax:2026 },
+  'mercedes sprinter': { brand:'Mercedes', model:'Sprinter', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:10, co2:215, priceNew:48000, yearMin:2018, yearMax:2026 },
+  'tesla model 3': { brand:'Tesla', model:'Model 3', segment:'berline', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:11, co2:0, priceNew:42000, yearMin:2019, yearMax:2026 },
+  'tesla model y': { brand:'Tesla', model:'Model Y', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:12, co2:0, priceNew:48000, yearMin:2021, yearMax:2026 },
+  'tesla model s': { brand:'Tesla', model:'Model S', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:15, co2:0, priceNew:105000, yearMin:2014, yearMax:2026 },
+  'tesla model x': { brand:'Tesla', model:'Model X', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:15, co2:0, priceNew:115000, yearMin:2016, yearMax:2026 },
+  'hyundai i10': { brand:'Hyundai', model:'i10', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:108, priceNew:16000, yearMin:2020, yearMax:2026 },
+  'hyundai i20': { brand:'Hyundai', model:'i20', segment:'citadine', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:120, priceNew:19000, yearMin:2020, yearMax:2026 },
+  'hyundai i30': { brand:'Hyundai', model:'i30', segment:'compacte', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:24000, yearMin:2017, yearMax:2026 },
+  'hyundai tucson': { brand:'Hyundai', model:'Tucson', segment:'suv', energies:['DIESEL','HYBRIDE','ESSENCE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:135, priceNew:35000, yearMin:2020, yearMax:2026 },
+  'hyundai kona': { brand:'Hyundai', model:'Kona', segment:'suv', energies:['ESSENCE','HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:120, priceNew:28000, yearMin:2017, yearMax:2026 },
+  'hyundai santa fe': { brand:'Hyundai', model:'Santa Fe', segment:'suv', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:10, co2:160, priceNew:52000, yearMin:2018, yearMax:2026 },
+  'hyundai ioniq': { brand:'Hyundai', model:'Ioniq', segment:'compacte', energies:['HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:85, priceNew:35000, yearMin:2017, yearMax:2024 },
+  'hyundai ioniq 5': { brand:'Hyundai', model:'Ioniq 5', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:9, co2:0, priceNew:48000, yearMin:2021, yearMax:2026 },
+  'kia picanto': { brand:'Kia', model:'Picanto', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:118, priceNew:15500, yearMin:2017, yearMax:2026 },
+  'kia rio': { brand:'Kia', model:'Rio', segment:'citadine', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:118, priceNew:18000, yearMin:2017, yearMax:2024 },
+  'kia ceed': { brand:'Kia', model:'Ceed', segment:'compacte', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:23000, yearMin:2018, yearMax:2026 },
+  'kia sportage': { brand:'Kia', model:'Sportage', segment:'suv', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:135, priceNew:34000, yearMin:2016, yearMax:2026 },
+  'kia niro': { brand:'Kia', model:'Niro', segment:'suv', energies:['HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:102, priceNew:32000, yearMin:2016, yearMax:2026 },
+  'kia ev6': { brand:'Kia', model:'EV6', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:9, co2:0, priceNew:50000, yearMin:2021, yearMax:2026 },
+  'fiat 500': { brand:'Fiat', model:'500', segment:'citadine', energies:['ESSENCE','HYBRIDE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:110, priceNew:17000, yearMin:2007, yearMax:2026 },
+  'fiat panda': { brand:'Fiat', model:'Panda', segment:'citadine', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:118, priceNew:15000, yearMin:2012, yearMax:2026 },
+  'fiat tipo': { brand:'Fiat', model:'Tipo', segment:'compacte', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:5, co2:125, priceNew:21000, yearMin:2016, yearMax:2024 },
+  'fiat doblo': { brand:'Fiat', model:'Doblo', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:5, co2:140, priceNew:22000, yearMin:2010, yearMax:2026 },
+  'fiat ducato': { brand:'Fiat', model:'Ducato', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:9, co2:210, priceNew:35000, yearMin:2014, yearMax:2026 },
+  'opel corsa': { brand:'Opel', model:'Corsa', segment:'citadine', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:115, priceNew:20000, yearMin:2019, yearMax:2026 },
+  'opel mokka': { brand:'Opel', model:'Mokka', segment:'suv', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:26000, yearMin:2020, yearMax:2026 },
+  'opel crossland': { brand:'Opel', model:'Crossland', segment:'suv', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:24000, yearMin:2017, yearMax:2026 },
+  'opel grandland': { brand:'Opel', model:'Grandland', segment:'suv', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:33000, yearMin:2017, yearMax:2026 },
+  'opel astra': { brand:'Opel', model:'Astra', segment:'compacte', energies:['ESSENCE','DIESEL','HYBRIDE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:120, priceNew:28000, yearMin:2021, yearMax:2026 },
+  'opel vivaro': { brand:'Opel', model:'Vivaro', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:160, priceNew:30000, yearMin:2019, yearMax:2026 },
+  'opel movano': { brand:'Opel', model:'Movano', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:9, co2:215, priceNew:35000, yearMin:2014, yearMax:2026 },
+  'ford fiesta': { brand:'Ford', model:'Fiesta', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:118, priceNew:18000, yearMin:2017, yearMax:2024 },
+  'ford focus': { brand:'Ford', model:'Focus', segment:'compacte', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:125, priceNew:24000, yearMin:2018, yearMax:2026 },
+  'ford puma': { brand:'Ford', model:'Puma', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:118, priceNew:26000, yearMin:2020, yearMax:2026 },
+  'ford kuga': { brand:'Ford', model:'Kuga', segment:'suv', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:34000, yearMin:2020, yearMax:2026 },
+  'ford transit': { brand:'Ford', model:'Transit', segment:'utilitaire', energies:['DIESEL','ELECTRIQUE'], defaultEnergy:'DIESEL', fiscalPower:9, co2:210, priceNew:36000, yearMin:2014, yearMax:2026 },
+  'ford ranger': { brand:'Ford', model:'Ranger', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:11, co2:230, priceNew:42000, yearMin:2016, yearMax:2026 },
+  'nissan micra': { brand:'Nissan', model:'Micra', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:4, co2:118, priceNew:18000, yearMin:2017, yearMax:2024 },
+  'nissan juke': { brand:'Nissan', model:'Juke', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:120, priceNew:24000, yearMin:2019, yearMax:2026 },
+  'nissan qashqai': { brand:'Nissan', model:'Qashqai', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:126, priceNew:32000, yearMin:2014, yearMax:2026 },
+  'nissan x-trail': { brand:'Nissan', model:'X-Trail', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:135, priceNew:40000, yearMin:2014, yearMax:2026 },
+  'nissan leaf': { brand:'Nissan', model:'Leaf', segment:'compacte', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:5, co2:0, priceNew:33000, yearMin:2018, yearMax:2026 },
+  'nissan navara': { brand:'Nissan', model:'Navara', segment:'utilitaire', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:11, co2:225, priceNew:40000, yearMin:2016, yearMax:2024 },
+  'seat ibiza': { brand:'Seat', model:'Ibiza', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:120, priceNew:20000, yearMin:2017, yearMax:2026 },
+  'seat leon': { brand:'Seat', model:'Leon', segment:'compacte', energies:['ESSENCE','DIESEL','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:125, priceNew:27000, yearMin:2020, yearMax:2026 },
+  'seat arona': { brand:'Seat', model:'Arona', segment:'suv', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:120, priceNew:24000, yearMin:2017, yearMax:2026 },
+  'seat ateca': { brand:'Seat', model:'Ateca', segment:'suv', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:6, co2:135, priceNew:30000, yearMin:2016, yearMax:2026 },
+  'skoda fabia': { brand:'Skoda', model:'Fabia', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:118, priceNew:21000, yearMin:2014, yearMax:2026 },
+  'skoda octavia': { brand:'Skoda', model:'Octavia', segment:'compacte', energies:['DIESEL','ESSENCE','HYBRIDE'], defaultEnergy:'DIESEL', fiscalPower:7, co2:125, priceNew:30000, yearMin:2019, yearMax:2026 },
+  'skoda karoq': { brand:'Skoda', model:'Karoq', segment:'suv', energies:['DIESEL','ESSENCE'], defaultEnergy:'DIESEL', fiscalPower:6, co2:130, priceNew:32000, yearMin:2017, yearMax:2026 },
+  'skoda kodiaq': { brand:'Skoda', model:'Kodiaq', segment:'suv', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:8, co2:150, priceNew:42000, yearMin:2016, yearMax:2026 },
+  'mini cooper': { brand:'Mini', model:'Cooper', segment:'premium', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:120, priceNew:28000, yearMin:2014, yearMax:2026 },
+  'mini countryman': { brand:'Mini', model:'Countryman', segment:'premium', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:36000, yearMin:2017, yearMax:2026 },
+  'volvo xc40': { brand:'Volvo', model:'XC40', segment:'premium', energies:['DIESEL','HYBRIDE','ELECTRIQUE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:130, priceNew:42000, yearMin:2018, yearMax:2026 },
+  'volvo xc60': { brand:'Volvo', model:'XC60', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:11, co2:150, priceNew:58000, yearMin:2017, yearMax:2026 },
+  'volvo xc90': { brand:'Volvo', model:'XC90', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:13, co2:175, priceNew:75000, yearMin:2015, yearMax:2026 },
+  'land rover discovery': { brand:'Land', model:'Rover Discovery', segment:'premium', energies:['DIESEL'], defaultEnergy:'DIESEL', fiscalPower:12, co2:200, priceNew:68000, yearMin:2017, yearMax:2026 },
+  'range rover evoque': { brand:'Range', model:'Rover Evoque', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:9, co2:160, priceNew:52000, yearMin:2019, yearMax:2026 },
+  'range rover sport': { brand:'Range', model:'Rover Sport', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:15, co2:195, priceNew:110000, yearMin:2018, yearMax:2026 },
+  'jeep renegade': { brand:'Jeep', model:'Renegade', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:130, priceNew:28000, yearMin:2014, yearMax:2026 },
+  'jeep compass': { brand:'Jeep', model:'Compass', segment:'suv', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:138, priceNew:35000, yearMin:2017, yearMax:2026 },
+  'mazda cx-3': { brand:'Mazda', model:'CX-3', segment:'suv', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:130, priceNew:24000, yearMin:2015, yearMax:2024 },
+  'mazda cx-5': { brand:'Mazda', model:'CX-5', segment:'suv', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:7, co2:140, priceNew:36000, yearMin:2017, yearMax:2026 },
+  'mazda cx-30': { brand:'Mazda', model:'CX-30', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:130, priceNew:30000, yearMin:2019, yearMax:2026 },
+  'mazda 2': { brand:'Mazda', model:'2', segment:'citadine', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:4, co2:105, priceNew:21000, yearMin:2015, yearMax:2026 },
+  'mazda 3': { brand:'Mazda', model:'3', segment:'compacte', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:125, priceNew:28000, yearMin:2019, yearMax:2026 },
+  'suzuki swift': { brand:'Suzuki', model:'Swift', segment:'citadine', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:4, co2:115, priceNew:18000, yearMin:2017, yearMax:2026 },
+  'suzuki vitara': { brand:'Suzuki', model:'Vitara', segment:'suv', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:125, priceNew:24000, yearMin:2015, yearMax:2026 },
+  'suzuki jimny': { brand:'Suzuki', model:'Jimny', segment:'suv', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:170, priceNew:24000, yearMin:2018, yearMax:2026 },
+  'honda civic': { brand:'Honda', model:'Civic', segment:'compacte', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:108, priceNew:33000, yearMin:2017, yearMax:2026 },
+  'honda jazz': { brand:'Honda', model:'Jazz', segment:'citadine', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:105, priceNew:24000, yearMin:2020, yearMax:2026 },
+  'honda cr-v': { brand:'Honda', model:'CR-V', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:7, co2:135, priceNew:42000, yearMin:2018, yearMax:2026 },
+  'honda hr-v': { brand:'Honda', model:'HR-V', segment:'suv', energies:['HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:5, co2:120, priceNew:30000, yearMin:2021, yearMax:2026 },
+  'mg zs': { brand:'MG', model:'ZS', segment:'suv', energies:['ELECTRIQUE','HYBRIDE'], defaultEnergy:'ELECTRIQUE', fiscalPower:5, co2:0, priceNew:29000, yearMin:2021, yearMax:2026 },
+  'mg 4': { brand:'MG', model:'4', segment:'compacte', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:5, co2:0, priceNew:30000, yearMin:2023, yearMax:2026 },
+  'mg marvel r': { brand:'MG', model:'Marvel R', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:7, co2:0, priceNew:42000, yearMin:2022, yearMax:2026 },
+  'byd atto 3': { brand:'BYD', model:'Atto 3', segment:'suv', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:7, co2:0, priceNew:40000, yearMin:2023, yearMax:2026 },
+  'byd dolphin': { brand:'BYD', model:'Dolphin', segment:'compacte', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:5, co2:0, priceNew:30000, yearMin:2023, yearMax:2026 },
+  'ds 3': { brand:'DS', model:'3', segment:'premium', energies:['ESSENCE','ELECTRIQUE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:120, priceNew:30000, yearMin:2019, yearMax:2026 },
+  'ds 4': { brand:'DS', model:'4', segment:'premium', energies:['ESSENCE','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:6, co2:125, priceNew:36000, yearMin:2021, yearMax:2026 },
+  'ds 7': { brand:'DS', model:'7', segment:'premium', energies:['DIESEL','HYBRIDE'], defaultEnergy:'HYBRIDE', fiscalPower:8, co2:135, priceNew:48000, yearMin:2017, yearMax:2026 },
+};
+
+// ============================================================
+// GRILLE VR LEASECAR — Calibrée sur sources constructeurs réelles
+// (Renault 08/2022, Dacia 03/2023, Groupe Caille 05+10/2024)
+// VR exprimée en % du prix catalogue TTC HORS carte grise
+// Lignes = durée (mois) · Colonnes = km (×1000)
+// ============================================================
+const VR_KM_COLS = [10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120];
+const VR_DURATIONS = [12,18,24,30,36,48,60];
+
+const VR_GRID = {
+  ESSENCE: {
+    12: [60,59,58,56,55,54,54,53,52,50,49,48,47,45,43,42,40,38,35,32,29,27,26],
+    18: [58,57,56,54,53,52,51,50,49,48,47,46,45,43,41,40,38,36,33,31,30,29,29],
+    24: [57,56,55,53,52,50,49,48,47,46,45,44,42,40,37,35,33,30,27,25,23,22,21],
+    30: [53,52,51,50,49,48,47,46,45,44,43,42,41,40,37,35,32,29,26,24,23,22,22],
+    36: [48,47,46,47,47,47,47,45,43,41,40,39,37,35,30,28,26,24,22,20,18,17,17],
+    48: [42,41,40,41,41,41,42,40,38,37,36,35,33,31,26,24,22,21,19,18,17,16,15],
+    60: [34,33,32,32,32,32,32,31,31,31,31,31,30,30,24,22,20,19,18,17,16,14,12],
+  },
+  DIESEL: {
+    12: [57,56,55,53,52,51,50,49,48,48,47,46,45,43,40,38,36,34,32,30,27,25,24],
+    18: [55,54,53,52,50,49,49,48,47,46,46,45,44,42,40,38,37,35,34,32,29,27,27],
+    24: [57,56,55,54,53,52,51,51,50,49,48,47,46,45,42,40,38,35,32,29,27,26,25],
+    30: [49,48,47,46,46,45,45,44,43,42,41,40,40,39,36,34,32,30,28,26,25,24,24],
+    36: [45,44,43,44,44,44,45,43,41,40,39,38,37,35,32,30,28,26,24,22,20,19,18],
+    48: [39,38,37,38,38,38,39,37,35,34,33,32,30,28,25,23,22,20,18,17,16,15,14],
+    60: [32,31,30,30,30,30,30,29,29,29,29,29,28,28,23,21,19,18,17,16,15,13,11],
+  },
+};
+// Hybride = moyenne Essence/Diesel
+VR_GRID.HYBRIDE = {};
+VR_DURATIONS.forEach(d => {
+  VR_GRID.HYBRIDE[d] = VR_GRID.ESSENCE[d].map((v, i) => Math.round((v + VR_GRID.DIESEL[d][i]) / 2));
+});
+// Électrique = Essence -10% (volatilité batterie + risque techno)
+VR_GRID.ELECTRIQUE = {};
+VR_DURATIONS.forEach(d => {
+  VR_GRID.ELECTRIQUE[d] = VR_GRID.ESSENCE[d].map(v => Math.max(8, v - 10));
 });
 
-// GET /api/scanner/vehicle-by-plate/:immat
-router.get('/vehicle-by-plate/:immat', authScanner, async (req, res) => {
+// Mapping énergie API → clé grille
+const ENERGY_MAP = {
+  'essence': 'ESSENCE', 'gasoline': 'ESSENCE', 'petrol': 'ESSENCE', 'sp': 'ESSENCE',
+  'diesel': 'DIESEL', 'gazole': 'DIESEL', 'go': 'DIESEL',
+  'hybride': 'HYBRIDE', 'hybrid': 'HYBRIDE', 'hybride rechargeable': 'HYBRIDE', 'phev': 'HYBRIDE', 'hev': 'HYBRIDE',
+  'electrique': 'ELECTRIQUE', 'electric': 'ELECTRIQUE', 'ev': 'ELECTRIQUE', 'bev': 'ELECTRIQUE',
+};
+function normalizeEnergy(raw) {
+  if (!raw) return 'ESSENCE';
+  const k = raw.toLowerCase().trim();
+  for (const [pattern, val] of Object.entries(ENERGY_MAP)) {
+    if (k.includes(pattern)) return val;
+  }
+  return 'ESSENCE';
+}
+
+// Interpolation bi-linéaire dans la grille VR
+function interpolateVR(energy, durationMonths, kmThousands) {
+  const grid = VR_GRID[energy] || VR_GRID.ESSENCE;
+  // Clamp values
+  const d = Math.max(VR_DURATIONS[0], Math.min(VR_DURATIONS[VR_DURATIONS.length - 1], durationMonths));
+  const k = Math.max(VR_KM_COLS[0], Math.min(VR_KM_COLS[VR_KM_COLS.length - 1], kmThousands));
+
+  // Find duration bracket
+  let d1 = VR_DURATIONS[0], d2 = VR_DURATIONS[VR_DURATIONS.length - 1];
+  for (let i = 0; i < VR_DURATIONS.length - 1; i++) {
+    if (d >= VR_DURATIONS[i] && d <= VR_DURATIONS[i+1]) {
+      d1 = VR_DURATIONS[i]; d2 = VR_DURATIONS[i+1]; break;
+    }
+  }
+  // Find km bracket
+  let k1Idx = 0, k2Idx = VR_KM_COLS.length - 1;
+  for (let i = 0; i < VR_KM_COLS.length - 1; i++) {
+    if (k >= VR_KM_COLS[i] && k <= VR_KM_COLS[i+1]) {
+      k1Idx = i; k2Idx = i+1; break;
+    }
+  }
+  const k1 = VR_KM_COLS[k1Idx], k2 = VR_KM_COLS[k2Idx];
+
+  // Bi-linear interpolation
+  const v_d1k1 = grid[d1][k1Idx];
+  const v_d1k2 = grid[d1][k2Idx];
+  const v_d2k1 = grid[d2][k1Idx];
+  const v_d2k2 = grid[d2][k2Idx];
+
+  const tk = k2 === k1 ? 0 : (k - k1) / (k2 - k1);
+  const td = d2 === d1 ? 0 : (d - d1) / (d2 - d1);
+
+  const v_d1 = v_d1k1 + (v_d1k2 - v_d1k1) * tk;
+  const v_d2 = v_d2k1 + (v_d2k2 - v_d2k1) * tk;
+  const vr = v_d1 + (v_d2 - v_d1) * td;
+  return vr; // % VR
+}
+
+// Estimation prix catalogue par modèle (table de référence indicative)
+// En prod, viendra de l'API ou d'une base interne LEASECAR
+const PRICE_LIST = {
+  // marque modèle (lowercase) → prix neuf catalogue moyen TTC en €
+  'renault clio': 22000, 'renault captur': 26000, 'renault megane': 30000, 'renault arkana': 33000,
+  'renault scenic': 35000, 'renault trafic': 38000, 'renault master': 45000, 'renault kangoo': 28000,
+  'peugeot 208': 22000, 'peugeot 2008': 27000, 'peugeot 308': 30000, 'peugeot 3008': 38000,
+  'peugeot 5008': 42000, 'peugeot 508': 45000, 'peugeot partner': 28000, 'peugeot expert': 38000,
+  'citroen c3': 19000, 'citroen c4': 25000, 'citroen berlingo': 27000, 'citroen jumpy': 36000,
+  'dacia sandero': 14000, 'dacia duster': 20000, 'dacia jogger': 19000, 'dacia spring': 18000,
+  'volkswagen polo': 23000, 'volkswagen golf': 30000, 'volkswagen tiguan': 42000, 'volkswagen passat': 45000,
+  'volkswagen t-roc': 32000, 'volkswagen id.3': 40000, 'volkswagen id.4': 48000,
+  'toyota yaris': 22000, 'toyota corolla': 30000, 'toyota rav4': 42000, 'toyota chr': 32000,
+  'toyota hilux': 45000, 'toyota proace': 38000,
+  'bmw serie 1': 35000, 'bmw serie 3': 50000, 'bmw x1': 45000, 'bmw x3': 60000, 'bmw i4': 65000,
+  'audi a3': 35000, 'audi a4': 48000, 'audi q3': 45000, 'audi q5': 60000, 'audi etron': 75000,
+  'mercedes classe a': 35000, 'mercedes classe c': 50000, 'mercedes classe e': 65000,
+  'mercedes glc': 60000, 'mercedes vito': 45000, 'mercedes sprinter': 50000,
+  'tesla model 3': 45000, 'tesla model y': 50000,
+  'fiat 500': 18000, 'fiat 500e': 28000, 'fiat panda': 16000, 'fiat ducato': 40000,
+  'kia picanto': 16000, 'kia sportage': 35000, 'kia niro': 35000, 'kia ev6': 50000,
+  'hyundai i20': 20000, 'hyundai tucson': 36000, 'hyundai kona': 30000, 'hyundai ioniq 5': 50000,
+  'opel corsa': 21000, 'opel mokka': 28000, 'opel astra': 30000, 'opel vivaro': 36000,
+  'ford fiesta': 22000, 'ford focus': 28000, 'ford kuga': 38000, 'ford transit': 45000,
+};
+
+function estimatePrice(brand, model) {
+  if (!brand || !model) return null;
+  const key = `${brand} ${model}`.toLowerCase().trim();
+  if (PRICE_LIST[key]) return PRICE_LIST[key];
+  // Fuzzy: match on brand only
+  const brandKey = brand.toLowerCase();
+  const matches = Object.keys(PRICE_LIST).filter(k => k.startsWith(brandKey));
+  if (matches.length > 0) {
+    const avg = matches.reduce((s, k) => s + PRICE_LIST[k], 0) / matches.length;
+    return Math.round(avg / 1000) * 1000;
+  }
+  return null;
+}
+
+// Compute full appraisal
+// ============================================================
+// COEFFICIENTS D'AJUSTEMENT — Cote affinée
+// Sources : moyennes observées marché VO français 2023-2025
+// ============================================================
+
+// Coefficient marque : certaines marques décotent moins
+const BRAND_COEFF = {
+  'toyota': 1.12, 'lexus': 1.10, 'porsche': 1.15, 'dacia': 1.08,
+  'bmw': 1.06, 'mercedes': 1.05, 'audi': 1.04, 'volkswagen': 1.03,
+  'mini': 1.05, 'mazda': 1.04, 'hyundai': 1.03, 'kia': 1.03,
+  'tesla': 0.92, // décote rapide (évolution tech + baisse prix catalogue)
+  'renault': 1.00, 'peugeot': 0.99, 'citroen': 0.97, 'fiat': 0.95,
+  'opel': 0.96, 'ford': 0.97, 'nissan': 0.98, 'seat': 0.97,
+  'skoda': 1.01, 'volvo': 1.04, 'land rover': 1.02, 'jeep': 0.96,
+};
+
+// Coefficient segment
+const SEGMENT_COEFF = {
+  'citadine': 0.95,    // décote plus vite (marché saturé)
+  'compacte': 1.00,    // référence
+  'suv': 1.08,         // forte demande, décote lente
+  'berline': 0.94,     // moins demandé, décote plus vite
+  'utilitaire': 1.06,  // utilitaires gardent bien leur valeur (usage pro)
+  'premium': 1.04,     // premium tient mieux mais dépend de la marque
+};
+
+// Coefficient état
+const CONDITION_COEFF = {
+  'excellent': 1.08,  // +8% si véhicule impeccable
+  'bon': 1.00,        // référence
+  'moyen': 0.88,      // -12% si défauts visibles
+  'mauvais': 0.72,    // -28% si réparations nécessaires
+};
+
+// Coefficient énergie post-ZFE (ajustement marché 2024-2026)
+const ENERGY_MARKET_COEFF = {
+  'ESSENCE': 1.00,
+  'DIESEL': 0.92,      // -8% pénalité ZFE / image marché
+  'HYBRIDE': 1.06,     // +6% prime hybride VO
+  'ELECTRIQUE': 0.88,  // -12% volatilité batterie + baisse prix neuf
+};
+
+// Coefficient régional La Réunion (marché insulaire)
+const REUNION_COEFF = 1.10; // +10% vs métropole (import coûteux, offre limitée)
+
+// Coefficient kilométrique non-linéaire
+// Les premiers 40k km décotent peu, au-delà de 80k ça accélère
+function kmCoefficient(kmCurrent) {
+  if (kmCurrent <= 15000) return 1.05;     // très peu roulé = prime
+  if (kmCurrent <= 30000) return 1.02;
+  if (kmCurrent <= 50000) return 1.00;     // référence
+  if (kmCurrent <= 70000) return 0.97;
+  if (kmCurrent <= 90000) return 0.93;
+  if (kmCurrent <= 110000) return 0.88;
+  if (kmCurrent <= 130000) return 0.82;
+  return 0.75;                              // >130k = forte décote
+}
+
+function computeAppraisal({ priceNew, energy, ageYears, kmCurrent, brand, condition, segment }) {
+  const e = normalizeEnergy(energy);
+  const durationMonths = Math.max(12, Math.round(ageYears * 12));
+  const kmK = Math.max(10, Math.round(kmCurrent / 1000));
+
+  // 1. VR brute depuis la grille LEASECAR
+  const vrPercentBrut = interpolateVR(e, durationMonths, kmK);
+  const vrBrut = Math.round(priceNew * vrPercentBrut / 100);
+
+  // 2. Appliquer les coefficients d'ajustement
+  const brandKey = (brand || '').toLowerCase().trim();
+  const coefBrand = BRAND_COEFF[brandKey] || 1.00;
+  const coefSegment = SEGMENT_COEFF[segment] || 1.00;
+  const coefCondition = CONDITION_COEFF[condition] || 1.00;
+  const coefEnergy = ENERGY_MARKET_COEFF[e] || 1.00;
+  const coefKm = kmCoefficient(kmCurrent);
+  const coefRegion = REUNION_COEFF;
+
+  const coefTotal = coefBrand * coefSegment * coefCondition * coefEnergy * coefKm * coefRegion;
+
+  // 3. Cote affinée
+  const coteAffinee = Math.round((vrBrut * coefTotal) / 100) * 100;
+  const cotePct = Math.round((coteAffinee / priceNew) * 1000) / 10;
+
+  // 4. Fourchette de négociation
+  const repriseLow = Math.round((coteAffinee * 0.90) / 100) * 100;
+  const repriseRecom = coteAffinee;
+  const repriseHigh = Math.round((coteAffinee * 1.05) / 100) * 100;
+
+  // 5. Simulation LLD VO (24 mois / 30 000 km supp)
+  const reloueDurMois = 24;
+  const reloueKmTotal = kmCurrent + 30000;
+  const vrFinPctBrut = interpolateVR(e, durationMonths + reloueDurMois, Math.round(reloueKmTotal / 1000));
+  const vrFinBrut = Math.round(priceNew * vrFinPctBrut / 100);
+  const vrFinEur = Math.round((vrFinBrut * coefTotal) / 100) * 100;
+  const amortissement = Math.max(0, coteAffinee - vrFinEur);
+  const taux = 0.058;
+  const fraisFin = Math.round(((coteAffinee + vrFinEur) / 2) * taux * (reloueDurMois / 12));
+  const totalFin = amortissement + fraisFin;
+  const loyerFinHT = Math.round(totalFin / reloueDurMois);
+  const entretien = e === 'ELECTRIQUE' ? 25 : 45;
+  const loyerTotalHT = loyerFinHT + entretien;
+
+  return {
+    energy: e,
+    // Brut (grille seule)
+    vrPercentBrut: Math.round(vrPercentBrut * 10) / 10,
+    vrBrut,
+    // Affiné (avec coefficients)
+    cotePct, coteAffinee,
+    coefTotal: Math.round(coefTotal * 1000) / 1000,
+    coefficients: { marque: coefBrand, segment: coefSegment, etat: coefCondition, energie: coefEnergy, km: coefKm, region: coefRegion },
+    // Négo
+    repriseLow, repriseRecom, repriseHigh,
+    durationMonths, kmK,
+    // LLD VO
+    relou: {
+      durMois: reloueDurMois, kmTotal: reloueKmTotal,
+      vrFinPct: Math.round((vrFinEur / priceNew) * 1000) / 10, vrFinEur,
+      amortissement, fraisFin, totalFin,
+      loyerFinHT, entretien, loyerTotalHT,
+    },
+  };
+}
+
+
+const STORAGE_KEY = 'matchScannerSettings_v1';
+const state = { stream: null, scanning: false, history: [], worker: null, settings: loadSettings(), quota: null };
+
+function loadSettings() {
   try {
-    const immat = req.params.immat.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', ...JSON.parse(raw) };
+  } catch (e) {}
+  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '' };
+}
+function saveSettings() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings)); } catch (e) {}
+}
 
-    // Adapter cette requête à votre ORM / structure de BDD
-    // Exemple avec Sequelize :
-    const vehicle = await db.Vehicle.findOne({
-      where: { immatriculation: immat },
-      include: [
-        { model: db.Contract, as: 'activeContract' },
-        { model: db.Customer, as: 'customer' },
-      ]
+const el = (id) => document.getElementById(id);
+function toast(msg, duration = 2400) {
+  const t = el('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), duration);
+}
+function switchView(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${name}`));
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchView(t.dataset.view)));
+
+function refreshEngineUi() {
+  const badge = el('engineBadge');
+  const subtitle = el('engineSubtitle');
+  if (state.settings.token) {
+    badge.textContent = 'Plate Recognizer';
+    badge.classList.remove('fallback');
+    subtitle.textContent = 'LEASECAR · MOTEUR API';
+  } else {
+    badge.textContent = 'Tesseract local';
+    badge.classList.add('fallback');
+    subtitle.textContent = 'LEASECAR · OCR LOCAL';
+  }
+  refreshQuotaPill();
+}
+function refreshQuotaPill() {
+  const pill = el('quotaPill');
+  if (!state.settings.token) { pill.textContent = 'Local'; return; }
+  if (!state.quota) { pill.textContent = 'API'; return; }
+  const remaining = state.quota.max - state.quota.used;
+  pill.textContent = `${remaining}/${state.quota.max}`;
+}
+
+const PLATE_REGEX_SIV = /([A-Z]{2})[\s\-]?(\d{3})[\s\-]?([A-Z]{2})/;
+function normalizePlate(raw) {
+  if (!raw) return null;
+  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const siv = cleaned.match(/^([A-Z]{2})(\d{3})([A-Z]{2})$/);
+  if (siv) return `${siv[1]}-${siv[2]}-${siv[3]}`;
+  const m = raw.toUpperCase().match(PLATE_REGEX_SIV);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+function extractPlateFromText(text) {
+  if (!text) return null;
+  const cleaned = text.toUpperCase().replace(/[^A-Z0-9\s\-]/g, ' ');
+  const siv = cleaned.match(PLATE_REGEX_SIV);
+  if (siv) return `${siv[1]}-${siv[2]}-${siv[3]}`;
+  const compact = cleaned.replace(/\s/g, '').match(/([A-Z]{2})(\d{3})([A-Z]{2})/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  return null;
+}
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
     });
+    state.stream = stream;
+    el('video').srcObject = stream;
+    el('cameraPlaceholder').style.display = 'none';
+    el('scanOverlay').style.display = 'block';
+    return true;
+  } catch (err) {
+    console.error('Camera error:', err);
+    toast('Caméra inaccessible. Utilisez la saisie manuelle.', 3500);
+    return false;
+  }
+}
+function stopCamera() {
+  if (state.stream) { state.stream.getTracks().forEach(t => t.stop()); state.stream = null; }
+}
 
-    // Exemple avec requête SQL brute :
-    // const [rows] = await db.query(`
-    //   SELECT v.*, c.ref as contract_ref, c.start_date, c.end_date,
-    //          c.duration_months, c.monthly_rent, c.contract_km,
-    //          c.residual_value, cu.name as customer_name
-    //   FROM vehicles v
-    //   LEFT JOIN contracts c ON c.vehicle_id = v.id AND c.status = 'active'
-    //   LEFT JOIN customers cu ON cu.id = c.customer_id
-    //   WHERE REPLACE(v.immatriculation, '-', '') = ?
-    // `, [immat]);
-    // const vehicle = rows[0];
+async function captureAndScan() {
+  if (!state.stream) { toast('Caméra non disponible'); return; }
+  state.scanning = true;
+  el('cameraStage').classList.add('scanning');
+  el('btnAction').classList.add('scanning');
+  el('btnActionText').textContent = 'Analyse en cours…';
+  el('btnAction').disabled = true;
+  el('ocrProgress').classList.add('show');
 
-    if (!vehicle) {
-      return res.status(404).json({ error: 'not_found' });
+  try {
+    const blob = await captureFrameBlob();
+    let result;
+    if (state.settings.token) {
+      el('ocrProgressText').textContent = 'Plate Recognizer · envoi…';
+      el('ocrProgressFill').style.width = '40%';
+      result = await scanWithPlateRecognizer(blob);
+    } else {
+      el('ocrProgressText').textContent = 'Tesseract local…';
+      result = await scanWithTesseract(blob);
+    }
+    if (result && result.plate) {
+      toast(`Plaque : ${result.plate}${result.confidence ? ' · ' + Math.round(result.confidence * 100) + '%' : ''}`);
+      lookupPlate(result.plate, result);
+    } else {
+      toast('Plaque non détectée. Réessayez.', 3000);
+    }
+  } catch (err) {
+    console.error('Scan error:', err);
+    toast(err.message || 'Erreur de scan', 3500);
+  } finally {
+    state.scanning = false;
+    el('cameraStage').classList.remove('scanning');
+    el('btnAction').classList.remove('scanning');
+    el('btnAction').disabled = false;
+    el('btnActionText').textContent = 'Scanner la plaque';
+    el('ocrProgress').classList.remove('show');
+    el('ocrProgressFill').style.width = '0%';
+  }
+}
+
+async function captureFrameBlob() {
+  const video = el('video');
+  const canvas = el('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0);
+  return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+}
+
+async function scanWithPlateRecognizer(blob) {
+  const fd = new FormData();
+  fd.append('upload', blob, 'frame.jpg');
+  if (state.settings.region) fd.append('regions', state.settings.region);
+  if (state.settings.mmc) fd.append('mmc', 'true');
+  const config = {};
+  if (state.settings.strict && state.settings.region) config.region = 'strict';
+  if (Object.keys(config).length) fd.append('config', JSON.stringify(config));
+
+  el('ocrProgressFill').style.width = '70%';
+
+  const resp = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
+    method: 'POST',
+    headers: { 'Authorization': `Token ${state.settings.token}` },
+    body: fd
+  });
+
+  if (resp.status === 401 || resp.status === 403) throw new Error('Token API invalide');
+  if (resp.status === 429) throw new Error('Quota API dépassé');
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error(`Erreur API ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  el('ocrProgressFill').style.width = '100%';
+  console.log('Plate Recognizer response:', data);
+
+  if (data.usage) {
+    state.quota = { used: data.usage.calls, max: data.usage.max_calls };
+    refreshQuotaPill();
+    refreshQuotaDisplay();
+  }
+
+  if (!data.results || data.results.length === 0) return null;
+  const best = data.results.reduce((a, b) => (a.score >= b.score ? a : b));
+
+  const out = {
+    plate: normalizePlate(best.plate) || best.plate.toUpperCase(),
+    confidence: best.score,
+    region: best.region && best.region.code,
+    source: 'platerecognizer',
+  };
+  if (best.vehicle && best.vehicle.props) {
+    const props = best.vehicle.props;
+    if (props.make_model && props.make_model[0]) out.makeModel = props.make_model[0].value;
+    if (props.color && props.color[0]) out.color = props.color[0].value;
+    if (props.orientation && props.orientation[0]) out.orientation = props.orientation[0].value;
+  }
+  if (best.vehicle && best.vehicle.type) out.vehicleType = best.vehicle.type;
+  return out;
+}
+
+async function scanWithTesseract(blob) {
+  const img = await blobToImage(blob);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const cropW = img.width * 0.78;
+  const cropH = cropW / 4.5;
+  const cropX = (img.width - cropW) / 2;
+  const cropY = (img.height - cropH) / 2;
+  canvas.width = cropW;
+  canvas.height = cropH;
+  ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  const imgData = ctx.getImageData(0, 0, cropW, cropH);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+    const v = avg > 130 ? 255 : (avg < 80 ? 0 : avg);
+    d[i] = d[i+1] = d[i+2] = v;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  if (!state.worker) {
+    el('ocrProgressText').textContent = 'Init OCR…';
+    state.worker = await Tesseract.createWorker('eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          el('ocrProgressFill').style.width = (m.progress * 100) + '%';
+          el('ocrProgressText').textContent = `Lecture… ${Math.round(m.progress * 100)}%`;
+        }
+      }
+    });
+    await state.worker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-' });
+  }
+  const { data } = await state.worker.recognize(canvas);
+  const plate = extractPlateFromText(data.text);
+  return plate ? { plate, confidence: (data.confidence || 0) / 100, source: 'tesseract' } : null;
+}
+
+function blobToImage(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+function lookupPlate(plate, scanMeta = {}) {
+  const normalized = normalizePlate(plate);
+  if (!normalized) { toast('Format de plaque invalide'); return; }
+  const vehicle = MATCH_DB[normalized];
+  const sivData = SIV_DB[normalized];
+
+  // 3ème niveau : si la plaque n'est ni dans MATCH! ni dans SIV_DB,
+  // mais que Plate Recognizer a renvoyé une marque/modèle, on cherche
+  // dans la base ADEME (caractéristiques techniques par modèle).
+  // C'est le pont entre la reconnaissance visuelle (qui donne marque/modèle)
+  // et les données techniques officielles (qui donnent énergie, segment, CO2…).
+  let ademeData = null;
+  if (!vehicle && !sivData && scanMeta.makeModel) {
+    ademeData = lookupAdeme(scanMeta.makeModel);
+    if (ademeData) {
+      // Estimation de l'année MEC depuis le format SIV (2 lettres de gauche)
+      ademeData = { ...ademeData, estimatedYear: estimateYearFromPlate(normalized) };
+      // Calcul auto de la cote affinée
+      ademeData.appraisal = computeAdemeAppraisal(ademeData, scanMeta);
+    }
+  }
+
+  let resultType = 'not-found';
+  let modelLabel = scanMeta.makeModel || 'Non référencé';
+  if (vehicle) {
+    resultType = 'match';
+    modelLabel = `${vehicle.brand} ${vehicle.model}`;
+  } else if (sivData) {
+    resultType = 'siv';
+    modelLabel = `${sivData.brand} ${sivData.model}`;
+  } else if (ademeData) {
+    resultType = 'ademe';
+    modelLabel = `${ademeData.brand} ${ademeData.model}`;
+  }
+
+  state.history.unshift({
+    plate: normalized,
+    found: !!vehicle,
+    sivFound: !!sivData,
+    ademeFound: !!ademeData,
+    resultType,
+    model: modelLabel,
+    timestamp: new Date(),
+    data: vehicle,
+    sivData,
+    ademeData,
+    scanMeta,
+  });
+  if (state.history.length > 30) state.history.pop();
+  renderHistory();
+
+  if (vehicle) renderResult(vehicle, scanMeta);
+  else if (sivData) renderSivProspect(sivData, scanMeta);
+  else if (ademeData) renderAdemeProspect(normalized, ademeData, scanMeta);
+  else renderNotFound(normalized, scanMeta);
+  switchView('result');
+}
+
+// ============================================================
+// LOOKUP ADEME — par marque + modèle (sortie Plate Recognizer)
+// ============================================================
+// Plate Recognizer renvoie typiquement "Renault Clio", "Peugeot 308"…
+// On normalise et on cherche dans ADEME_DB. Si pas de match exact, on
+// essaie sur la marque seule + matching partiel sur le modèle (Captur,
+// captur 2, captur ii…).
+function lookupAdeme(makeModel) {
+  if (!makeModel) return null;
+  const key = makeModel.toLowerCase().trim();
+  // Match exact
+  if (ADEME_DB[key]) return { ...ADEME_DB[key], matchType: 'exact' };
+  // Match partiel : on cherche une entrée dont la clé est préfixe ou contenue
+  for (const k of Object.keys(ADEME_DB)) {
+    if (key.startsWith(k) || k.startsWith(key)) {
+      return { ...ADEME_DB[k], matchType: 'partial' };
+    }
+  }
+  // Match sur marque + premier mot du modèle
+  const parts = key.split(' ');
+  if (parts.length >= 2) {
+    const brandModel = parts[0] + ' ' + parts[1];
+    if (ADEME_DB[brandModel]) return { ...ADEME_DB[brandModel], matchType: 'fuzzy' };
+  }
+  return null;
+}
+
+// Estimation de l'année depuis les 2 lettres SIV de gauche.
+// Le SIV a démarré en avril 2009 à AA-001-AA. La séquence avance
+// d'environ 21 paires de lettres par an (constatation empirique sur
+// les points de calibration AA→2009, FA→2014, GA→2015, HA→2017).
+// Approximation pratique, à ±6 mois.
+function estimateYearFromPlate(plate) {
+  const m = plate.match(/^([A-Z]{2})-?\d{3}-?[A-Z]{2}$/);
+  if (!m) return null;
+  const letters = m[1];
+  // Alphabet SIV (omet I, O, U)
+  const ALPHA = 'ABCDEFGHJKLMNPQRSTVWXYZ'; // 23 lettres
+  const i1 = ALPHA.indexOf(letters[0]);
+  const i2 = ALPHA.indexOf(letters[1]);
+  if (i1 < 0 || i2 < 0) return null;
+  // Position globale 0..(23*23-1) = 0..528
+  const pos = i1 * 23 + i2;
+  // Calibrage empirique : ~21 paires/an au démarrage
+  const yearsSinceStart = pos / 21;
+  const year = Math.round(2009 + yearsSinceStart);
+  return Math.min(2026, Math.max(2009, year));
+}
+
+// Calcul automatique de la cote affinée à partir des données ADEME.
+// On utilise les caractéristiques officielles (segment, énergie majoritaire)
+// et une estimation kilométrique basée sur l'âge (15 000 km/an en moyenne).
+// L'utilisateur peut ensuite affiner état + km via le bouton "Affiner".
+function computeAdemeAppraisal(ademe, scanMeta) {
+  const year = ademe.estimatedYear || ademe.yearMax;
+  const ageYears = Math.max(0.5, 2026 - year);
+  const kmEstimated = Math.round(ageYears * 15000);
+  return computeAppraisal({
+    priceNew: ademe.priceNew,
+    energy: ademe.defaultEnergy,
+    ageYears,
+    kmCurrent: kmEstimated,
+    brand: ademe.brand,
+    condition: 'bon',
+    segment: ademe.segment,
+  });
+}
+
+function metaChips(scanMeta) {
+  const chips = [];
+  if (scanMeta.source === 'platerecognizer') chips.push('<div class="meta-chip">Source: <strong>API</strong></div>');
+  else if (scanMeta.source === 'tesseract') chips.push('<div class="meta-chip">Source: <strong>OCR local</strong></div>');
+  else if (scanMeta.source === 'manual') chips.push('<div class="meta-chip">Source: <strong>Manuel</strong></div>');
+  if (scanMeta.confidence) chips.push(`<div class="meta-chip">Confiance: <strong>${Math.round(scanMeta.confidence * 100)}%</strong></div>`);
+  if (scanMeta.makeModel) chips.push(`<div class="meta-chip">Vu: <strong>${scanMeta.makeModel}</strong></div>`);
+  return chips;
+}
+
+function renderResult(v, scanMeta = {}) {
+  const usagePercent = Math.min(100, Math.round((v.currentKm / v.contractKm) * 100));
+  let badgeClass = 'active';
+  if (v.statusType === 'warning') badgeClass = 'warning';
+  if (v.statusType === 'danger') badgeClass = 'danger';
+  const chips = metaChips(scanMeta);
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status">
+        <div class="marker"></div>
+        <span>Véhicule identifié · MATCH! DB</span>
+      </div>
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${v.plate}</div>
+      </div>
+      <div class="vehicle-headline">${v.brand} ${v.model}</div>
+      <div class="vehicle-sub">${v.version} · ${v.color}</div>
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+      <div class="status-bar">
+        <div class="badge ${badgeClass}"><div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>${v.status}</div>
+        <div class="badge" style="color: ${v.fuelColor}; border-color: ${v.fuelColor}40">${v.energy}</div>
+        <div class="badge">${v.location}</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Contrat LLD</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Référence</div><div class="data-value highlight">${v.contractRef}</div></div>
+        <div class="data-cell"><div class="data-label">Durée</div><div class="data-value">${v.duration}</div></div>
+        <div class="data-cell full"><div class="data-label">Locataire</div><div class="data-value">${v.customer}</div></div>
+        <div class="data-cell"><div class="data-label">Début</div><div class="data-value">${v.contractStart}</div></div>
+        <div class="data-cell"><div class="data-label">Fin prévue</div><div class="data-value">${v.contractEnd}</div></div>
+        <div class="data-cell"><div class="data-label">Loyer mensuel</div><div class="data-value highlight">${v.monthlyRent}</div></div>
+        <div class="data-cell"><div class="data-label">Valeur résiduelle</div><div class="data-value">${v.residualValue}</div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Kilométrage</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Compteur</div><div class="data-value highlight">${v.currentKm.toLocaleString('fr-FR')} km</div></div>
+        <div class="data-cell"><div class="data-label">Plafond contrat</div><div class="data-value">${v.contractKm.toLocaleString('fr-FR')} km</div></div>
+      </div>
+      <div class="progress"><div class="progress-fill" style="width: ${usagePercent}%"></div></div>
+      <div class="progress-meta">
+        <span>${usagePercent}% utilisé</span>
+        <span>Prochain entretien : ${v.nextMaintenance}</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Identification technique</div>
+      <div class="data-grid">
+        <div class="data-cell full"><div class="data-label">VIN</div><div class="data-value">${v.vin}</div></div>
+        <div class="data-cell"><div class="data-label">1ère immatriculation</div><div class="data-value">${v.firstReg}</div></div>
+        <div class="data-cell"><div class="data-label">Énergie</div><div class="data-value">${v.energy}</div></div>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="btn-ghost">📞 Locataire</button>
+      <button class="btn-ghost">📋 Voir contrat</button>
+    </div>
+  `;
+}
+
+// Translation maps for Plate Recognizer raw values
+const TYPE_FR = {
+  'Sedan': 'Berline',
+  'SUV': 'SUV',
+  'Big Truck': 'Poids lourd',
+  'Bus': 'Bus / Car',
+  'Motorcycle': 'Moto',
+  'Pickup Truck': 'Pick-up',
+  'Van': 'Utilitaire',
+  'Unknown': 'Inconnu',
+};
+const COLOR_FR = {
+  'black': 'Noir',
+  'white': 'Blanc',
+  'silver': 'Gris argent',
+  'gray': 'Gris',
+  'red': 'Rouge',
+  'blue': 'Bleu',
+  'green': 'Vert',
+  'yellow': 'Jaune',
+  'brown': 'Marron',
+  'orange': 'Orange',
+  'beige': 'Beige',
+  'unknown': '—',
+};
+const COLOR_HEX = {
+  'black': '#1a1a1a', 'white': '#f5f5f0', 'silver': '#c0c4c8', 'gray': '#7a7e85',
+  'red': '#dc3545', 'blue': '#1e6fdc', 'green': '#28a745', 'yellow': '#ffc107',
+  'brown': '#8b5a2b', 'orange': '#fd7e14', 'beige': '#d4b896',
+};
+
+// Rough VR / loyer estimation based on detected type — gives an indicative range
+// Calibrated for La Réunion LLD market — to refine with real LEASECAR data
+const VR_ESTIMATES = {
+  'Sedan':         { vrMin: 6000,  vrMax: 18000, rentMin: 250, rentMax: 550 },
+  'SUV':           { vrMin: 10000, vrMax: 28000, rentMin: 380, rentMax: 850 },
+  'Pickup Truck':  { vrMin: 12000, vrMax: 25000, rentMin: 450, rentMax: 750 },
+  'Van':           { vrMin: 8000,  vrMax: 20000, rentMin: 320, rentMax: 600 },
+  'Big Truck':     { vrMin: 15000, vrMax: 50000, rentMin: 600, rentMax: 1500 },
+  'Bus':           { vrMin: 20000, vrMax: 60000, rentMin: 800, rentMax: 1800 },
+  'Motorcycle':    { vrMin: 2000,  vrMax: 8000,  rentMin: 120, rentMax: 280 },
+};
+
+function fmtEur(n) {
+  return n.toLocaleString('fr-FR') + ' €';
+}
+
+// ============================================================
+// renderSivProspect — Fiche prospect (véhicule HORS flotte avec données SIV)
+// ============================================================
+function renderSivProspect(siv, scanMeta = {}) {
+  const chips = metaChips(scanMeta);
+
+  // Lead scoring colors
+  const scoreColor = {
+    'A+': 'var(--signal-green)',
+    'A':  'var(--signal-green)',
+    'B+': 'var(--hi-vis)',
+    'B':  'var(--hi-vis)',
+    'C':  'var(--hi-vis-deep)',
+    'D':  'var(--text-3)',
+  }[siv.leadScore] || 'var(--text-2)';
+
+  // Status type by financing
+  let statusBadge = '';
+  if (siv.financingType === 'PROPRIETE') {
+    statusBadge = `<div class="badge active">
+      <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+      ${siv.financingLabel} · PROSPECT
+    </div>`;
+  } else if (siv.financingType === 'LLD') {
+    statusBadge = `<div class="badge warning">
+      <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+      ${siv.financingLabel} · ${siv.leaser}
+    </div>`;
+  } else {
+    statusBadge = `<div class="badge">
+      <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+      ${siv.financingLabel}
+    </div>`;
+  }
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status warning">
+        <div class="marker"></div>
+        <span>Hors flotte · Données SIV simulées</span>
+      </div>
+
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${siv.plate}</div>
+      </div>
+
+      <div class="vehicle-headline">${siv.brand} ${siv.model}</div>
+      <div class="vehicle-sub">${siv.version}</div>
+
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+
+      <div class="status-bar">
+        ${statusBadge}
+        <div class="badge">${siv.energy}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Score commercial</div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px;background:var(--bg-2);border:1px solid ${scoreColor}40;border-radius:8px">
+        <div style="width:54px;height:54px;border-radius:50%;background:${scoreColor};display:grid;place-items:center;font-family:var(--font-mono);font-size:22px;font-weight:800;color:var(--bg-0)">
+          ${siv.leadScore}
+        </div>
+        <div style="flex:1">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">
+            Recommandation
+          </div>
+          <div style="font-family:var(--font-display);font-size:14px;color:var(--text-0);line-height:1.4">
+            ${siv.leadReason}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Identification SIV</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Type financement</div><div class="data-value highlight">${siv.financingType}</div></div>
+        <div class="data-cell"><div class="data-label">Âge</div><div class="data-value">${siv.age} ans</div></div>
+        <div class="data-cell full"><div class="data-label">${siv.financingType === 'PROPRIETE' ? 'Titulaire' : 'Loueur'}</div><div class="data-value">${siv.owner || siv.leaser || '—'}</div></div>
+        <div class="data-cell"><div class="data-label">1ère MEC</div><div class="data-value">${siv.firstReg}</div></div>
+        <div class="data-cell"><div class="data-label">Énergie</div><div class="data-value">${siv.energy}</div></div>
+        <div class="data-cell"><div class="data-label">Puissance fiscale</div><div class="data-value">${siv.fiscalPower} CV</div></div>
+        <div class="data-cell"><div class="data-label">Puissance réelle</div><div class="data-value">${siv.power} kW</div></div>
+        <div class="data-cell full"><div class="data-label">Émission CO2</div><div class="data-value">${siv.co2} g/km</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Action commerciale</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        ${siv.financingType === 'PROPRIETE'
+          ? `<button class="btn-primary" style="background: var(--signal-green); color: var(--bg-0)" onclick="window.toast && window.toast('Lead ajouté au CRM (démo)')">📞 Approcher ce prospect</button>`
+          : `<button class="btn-primary" onclick="window.toast && window.toast('Suivi planifié 6 mois avant fin LLD')">⏰ Planifier suivi fin de contrat</button>`
+        }
+        <button class="btn-ghost" onclick="window.toast && window.toast('Fiche exportée vers MATCH! Prospects')">➕ Ajouter à MATCH! Prospects</button>
+        <button class="btn-ghost">📸 Photographier le véhicule</button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// renderAdemeProspect — Fiche véhicule HORS flotte enrichie ADEME
+// ============================================================
+// Déclenchée quand : plaque inconnue de MATCH! + inconnue de SIV_DB
+// + Plate Recognizer a renvoyé une marque/modèle qui matche ADEME_DB.
+// Affiche : caractéristiques techniques officielles + cote affinée auto.
+function renderAdemeProspect(plate, ademe, scanMeta = {}) {
+  const chips = metaChips(scanMeta);
+  const a = ademe.appraisal;
+  const matchTypeLabel = {
+    'exact':   'Match exact ADEME',
+    'partial': 'Match partiel ADEME',
+    'fuzzy':   'Match approximatif ADEME',
+  }[ademe.matchType] || 'Données ADEME';
+
+  // Couleur visuelle (Plate Recognizer)
+  const colorBadge = (scanMeta.color && COLOR_HEX[scanMeta.color])
+    ? `<div class="badge" style="border-color:${COLOR_HEX[scanMeta.color]}80">
+         <div style="width:8px;height:8px;background:${COLOR_HEX[scanMeta.color]};border-radius:50%;border:1px solid var(--line-bright)"></div>
+         ${COLOR_FR[scanMeta.color] || scanMeta.color}
+       </div>`
+    : '';
+
+  const energiesLabel = ademe.energies.map(e => {
+    const fr = { ESSENCE:'Essence', DIESEL:'Diesel', HYBRIDE:'Hybride', ELECTRIQUE:'Électrique' }[e] || e;
+    return e === ademe.defaultEnergy ? `<strong>${fr}</strong>` : fr;
+  }).join(' · ');
+
+  const coefColor = v => v >= 1.03 ? 'var(--signal-green)' : v <= 0.97 ? 'var(--signal-red)' : 'var(--text-1)';
+  const coefSign  = v => v >= 1 ? `+${Math.round((v - 1) * 100)}%` : `${Math.round((v - 1) * 100)}%`;
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status warning">
+        <div class="marker"></div>
+        <span>Hors flotte · Enrichi ADEME</span>
+      </div>
+
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${plate}</div>
+      </div>
+
+      <div class="vehicle-headline">${ademe.brand} ${ademe.model}</div>
+      <div class="vehicle-sub">Segment : ${ademe.segment} · ${matchTypeLabel}</div>
+
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+
+      <div class="status-bar">
+        <div class="badge warning">
+          <div style="width:5px;height:5px;background:currentColor;border-radius:50%"></div>
+          Non flotté · ${ademe.estimatedYear || '?'}
+        </div>
+        ${colorBadge}
+        ${scanMeta.vehicleType ? `<div class="badge">${TYPE_FR[scanMeta.vehicleType] || scanMeta.vehicleType}</div>` : ''}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Caractéristiques techniques (ADEME)</div>
+      <div class="data-grid">
+        <div class="data-cell"><div class="data-label">Marque</div><div class="data-value highlight">${ademe.brand}</div></div>
+        <div class="data-cell"><div class="data-label">Modèle</div><div class="data-value highlight">${ademe.model}</div></div>
+        <div class="data-cell full"><div class="data-label">Énergies disponibles</div><div class="data-value">${energiesLabel}</div></div>
+        <div class="data-cell"><div class="data-label">Énergie principale</div><div class="data-value">${ademe.defaultEnergy}</div></div>
+        <div class="data-cell"><div class="data-label">Puissance fiscale</div><div class="data-value">${ademe.fiscalPower} CV</div></div>
+        <div class="data-cell"><div class="data-label">CO₂ moyen</div><div class="data-value">${ademe.co2} g/km</div></div>
+        <div class="data-cell"><div class="data-label">Norme</div><div class="data-value">Euro 6</div></div>
+        <div class="data-cell"><div class="data-label">Année estimée</div><div class="data-value">${ademe.estimatedYear || '—'}</div></div>
+        <div class="data-cell"><div class="data-label">Production</div><div class="data-value">${ademe.yearMin}–${ademe.yearMax}</div></div>
+        <div class="data-cell full"><div class="data-label">Prix neuf catalogue (réf.)</div><div class="data-value">${fmtEur(ademe.priceNew)}</div></div>
+      </div>
+      <div style="margin-top:10px;padding:8px 10px;background:var(--bg-2);border:1px dashed var(--line);border-radius:6px;font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.5">
+        Source : ADEME / Carlabelling · data.gouv.fr (Licence Ouverte) · Caractéristiques moyennes du modèle. Énergie & version exactes non vérifiables sans accès SIV.
+      </div>
+    </div>
+
+    <div class="section" style="border:1px solid var(--hi-vis)40;background:var(--bg-1)">
+      <div class="section-title">Cote affinée auto-calculée</div>
+      <div style="display:flex;align-items:baseline;gap:12px;margin:8px 0 14px">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">Cote affinée</div>
+          <div style="font-family: var(--font-mono); font-size: 28px; font-weight: 800; color: var(--hi-vis); line-height: 1;">${fmtEur(a.coteAffinee)}</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);margin-top:3px">${a.cotePct}% du neuf</div>
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">VR brute</div>
+          <div style="font-family:var(--font-mono);font-size:14px;color:var(--text-2)">${fmtEur(a.vrBrut)}</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:3px">${a.vrPercentBrut}% grille</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-2);border-radius:4px;font-family:var(--font-mono);font-size:11px">
+          <span style="color:var(--text-3)">Marque</span>
+          <span style="font-weight:700;color:${coefColor(a.coefficients.marque)}">${coefSign(a.coefficients.marque)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-2);border-radius:4px;font-family:var(--font-mono);font-size:11px">
+          <span style="color:var(--text-3)">Segment</span>
+          <span style="font-weight:700;color:${coefColor(a.coefficients.segment)}">${coefSign(a.coefficients.segment)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-2);border-radius:4px;font-family:var(--font-mono);font-size:11px">
+          <span style="color:var(--text-3)">État</span>
+          <span style="font-weight:700;color:${coefColor(a.coefficients.etat)}">${coefSign(a.coefficients.etat)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-2);border-radius:4px;font-family:var(--font-mono);font-size:11px">
+          <span style="color:var(--text-3)">Énergie</span>
+          <span style="font-weight:700;color:${coefColor(a.coefficients.energie)}">${coefSign(a.coefficients.energie)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-2);border-radius:4px;font-family:var(--font-mono);font-size:11px">
+          <span style="color:var(--text-3)">Km estimé</span>
+          <span style="font-weight:700;color:${coefColor(a.coefficients.km)}">${coefSign(a.coefficients.km)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--bg-2);border-radius:4px;font-family:var(--font-mono);font-size:11px">
+          <span style="color:var(--text-3)">Réunion</span>
+          <span style="font-weight:700;color:var(--signal-green)">${coefSign(a.coefficients.region)}</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:10px;background:var(--bg-2);border-radius:6px;margin-bottom:8px">
+        <div style="text-align:center">
+          <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-3);text-transform:uppercase">Bas</div>
+          <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--signal-red)">${fmtEur(a.repriseLow)}</div>
+        </div>
+        <div style="text-align:center;border-left:1px solid var(--line);border-right:1px solid var(--line)">
+          <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-3);text-transform:uppercase">Recom.</div>
+          <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--hi-vis)">${fmtEur(a.repriseRecom)}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-3);text-transform:uppercase">Haut</div>
+          <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--signal-green)">${fmtEur(a.repriseHigh)}</div>
+        </div>
+      </div>
+
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.5;padding:6px 8px">
+        Hypothèses : énergie ${a.energy} · ${a.durationMonths} mois · ${a.kmK}k km · état "bon" par défaut. Affine via le bouton ci-dessous pour saisir le vrai état + km.
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Action</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <button class="btn-primary" onclick="window.openAdemeRefine && window.openAdemeRefine('${plate}')">🎯 Affiner la cote (état + km réel)</button>
+        <button class="btn-ghost" onclick="window.toast && window.toast('Lead ADEME ajouté au CRM (démo)')">📞 Approcher ce prospect</button>
+        <button class="btn-ghost" onclick="window.toast && window.toast('Fiche exportée vers MATCH! Prospects')">➕ Ajouter à MATCH! Prospects</button>
+      </div>
+    </div>
+  `;
+}
+
+// Affiner la cote ADEME avec état + km réel saisis
+function openAdemeRefine(plate) {
+  const entry = state.history.find(h => h.plate === plate && h.ademeData);
+  if (!entry) { toast('Fiche ADEME introuvable'); return; }
+  const ademe = entry.ademeData;
+  const currentKm = ademe.appraisal.kmK * 1000;
+
+  const html = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;display:grid;place-items:center;padding:20px" id="ademeRefineModal" onclick="if(event.target.id==='ademeRefineModal')this.remove()">
+      <div style="background:var(--bg-1);border:1px solid var(--line-bright);border-radius:10px;padding:20px;max-width:420px;width:100%;max-height:90vh;overflow:auto">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--hi-vis);margin-bottom:14px;text-transform:uppercase;letter-spacing:1px">
+          Affiner la cote · ${ademe.brand} ${ademe.model}
+        </div>
+
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">État réel du véhicule</label>
+        <select id="ademeRefineCondition" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:14px">
+          <option value="excellent">Excellent (comme neuf) · +8%</option>
+          <option value="bon" selected>Bon (usure normale) · réf.</option>
+          <option value="moyen">Moyen (défauts visibles) · -12%</option>
+          <option value="mauvais">Mauvais (réparations requises) · -28%</option>
+        </select>
+
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Kilométrage réel (relevé tableau de bord)</label>
+        <input id="ademeRefineKm" type="number" min="0" step="1000" value="${currentKm}" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:6px">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:14px">Estimation actuelle : ${currentKm.toLocaleString('fr-FR')} km (${ademe.estimatedYear} · 15 000 km/an)</div>
+
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Énergie réelle</label>
+        <select id="ademeRefineEnergy" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:14px">
+          ${ademe.energies.map(e => `<option value="${e}" ${e === ademe.defaultEnergy ? 'selected' : ''}>${e}</option>`).join('')}
+        </select>
+
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-ghost" style="flex:1" onclick="document.getElementById('ademeRefineModal').remove()">Annuler</button>
+          <button class="btn-primary" style="flex:1" onclick="window.applyAdemeRefine && window.applyAdemeRefine('${plate}')">Recalculer</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function applyAdemeRefine(plate) {
+  const entry = state.history.find(h => h.plate === plate && h.ademeData);
+  if (!entry) return;
+  const condition = document.getElementById('ademeRefineCondition').value;
+  const km = Math.max(0, parseInt(document.getElementById('ademeRefineKm').value, 10) || 0);
+  const energy = document.getElementById('ademeRefineEnergy').value;
+  const ademe = entry.ademeData;
+  const year = ademe.estimatedYear || ademe.yearMax;
+  const ageYears = Math.max(0.5, 2026 - year);
+
+  ademe.appraisal = computeAppraisal({
+    priceNew: ademe.priceNew,
+    energy,
+    ageYears,
+    kmCurrent: km,
+    brand: ademe.brand,
+    condition,
+    segment: ademe.segment,
+  });
+  ademe.refinedCondition = condition;
+  ademe.refinedKm = km;
+  ademe.refinedEnergy = energy;
+
+  document.getElementById('ademeRefineModal').remove();
+  renderAdemeProspect(plate, ademe, entry.scanMeta);
+  toast('Cote affinée recalculée');
+}
+
+window.openAdemeRefine = openAdemeRefine;
+window.applyAdemeRefine = applyAdemeRefine;
+
+function renderNotFound(plate, scanMeta = {}) {
+  const chips = metaChips(scanMeta);
+  const hasMmc = scanMeta.makeModel || scanMeta.color || scanMeta.vehicleType;
+  const hasApiSource = scanMeta.source === 'platerecognizer';
+
+  // ============ HEADER ============
+  // If we have a make/model, surface it as the headline
+  const headline = scanMeta.makeModel
+    ? scanMeta.makeModel
+    : 'Véhicule détecté';
+  const sub = scanMeta.color || scanMeta.vehicleType
+    ? `${(COLOR_FR[scanMeta.color] || scanMeta.color || '').trim()}${scanMeta.color && scanMeta.vehicleType ? ' · ' : ''}${TYPE_FR[scanMeta.vehicleType] || ''}`.trim().replace(/^·\s*/, '')
+    : 'Hors flotte MATCH!';
+
+  // Status badges
+  const badges = [];
+  if (scanMeta.color && COLOR_HEX[scanMeta.color]) {
+    badges.push(`<div class="badge" style="border-color:${COLOR_HEX[scanMeta.color]}80">
+      <div style="width:8px;height:8px;background:${COLOR_HEX[scanMeta.color]};border-radius:50%;border:1px solid var(--line-bright)"></div>
+      ${COLOR_FR[scanMeta.color] || scanMeta.color}
+    </div>`);
+  }
+  if (scanMeta.vehicleType) {
+    badges.push(`<div class="badge">${TYPE_FR[scanMeta.vehicleType] || scanMeta.vehicleType}</div>`);
+  }
+  if (scanMeta.region) {
+    badges.push(`<div class="badge">Région ${scanMeta.region.toUpperCase()}</div>`);
+  }
+  if (scanMeta.confidence) {
+    const pct = Math.round(scanMeta.confidence * 100);
+    const cls = pct >= 90 ? 'active' : pct >= 70 ? 'warning' : 'danger';
+    badges.push(`<div class="badge ${cls}">Confiance ${pct}%</div>`);
+  }
+
+  // ============ ESTIMATION SECTION ============
+  let estimation = '';
+  if (scanMeta.vehicleType && VR_ESTIMATES[scanMeta.vehicleType]) {
+    const e = VR_ESTIMATES[scanMeta.vehicleType];
+    estimation = `
+    <div class="section">
+      <div class="section-title">Estimation indicative LLD</div>
+      <div class="data-grid">
+        <div class="data-cell">
+          <div class="data-label">Loyer mensuel estimé</div>
+          <div class="data-value highlight">${fmtEur(e.rentMin)} – ${fmtEur(e.rentMax)}</div>
+        </div>
+        <div class="data-cell">
+          <div class="data-label">Valeur résiduelle estimée</div>
+          <div class="data-value">${fmtEur(e.vrMin)} – ${fmtEur(e.vrMax)}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;background:var(--bg-2);border:1px dashed var(--line-bright);border-radius:6px;font-family:var(--font-mono);font-size:10px;color:var(--text-3);line-height:1.5">
+        ⚠ Fourchette indicative basée sur le type "${TYPE_FR[scanMeta.vehicleType]}".<br/>
+        À affiner avec ta grille VR par défaut MATCH! (modèle exact + énergie + millésime).
+      </div>
+    </div>`;
+  }
+
+  // ============ DETAIL SECTION ============
+  let detailSection = '';
+  if (hasMmc) {
+    detailSection = `
+    <div class="section">
+      <div class="section-title">Reconnaissance visuelle (Plate Recognizer)</div>
+      <div class="data-grid">
+        ${scanMeta.makeModel ? `<div class="data-cell full"><div class="data-label">Marque / Modèle détecté</div><div class="data-value highlight">${scanMeta.makeModel}</div></div>` : ''}
+        ${scanMeta.vehicleType ? `<div class="data-cell"><div class="data-label">Type</div><div class="data-value">${TYPE_FR[scanMeta.vehicleType] || scanMeta.vehicleType}</div></div>` : ''}
+        ${scanMeta.color ? `<div class="data-cell"><div class="data-label">Couleur</div><div class="data-value">${COLOR_FR[scanMeta.color] || scanMeta.color}</div></div>` : ''}
+        ${scanMeta.orientation ? `<div class="data-cell"><div class="data-label">Vue</div><div class="data-value">${scanMeta.orientation === 'Front' ? 'Avant' : (scanMeta.orientation === 'Rear' ? 'Arrière' : scanMeta.orientation)}</div></div>` : ''}
+        ${scanMeta.region ? `<div class="data-cell"><div class="data-label">Région plaque</div><div class="data-value">${scanMeta.region.toUpperCase()}</div></div>` : ''}
+      </div>
+    </div>`;
+  } else if (hasApiSource) {
+    // API was called but MMC was OFF
+    detailSection = `
+    <div class="section">
+      <div class="section-title">Marque / Modèle non disponible</div>
+      <div style="padding:12px;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.6">
+        Active <strong style="color:var(--hi-vis)">Make / Model / Color</strong> dans les réglages ⚙ pour récupérer automatiquement la marque, le modèle et la couleur du véhicule.
+      </div>
+    </div>`;
+  } else if (scanMeta.source === 'tesseract' || scanMeta.source === 'manual') {
+    // OCR local only — suggest upgrade
+    detailSection = `
+    <div class="section">
+      <div class="section-title">Données limitées</div>
+      <div style="padding:12px;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.6">
+        Avec un token Plate Recognizer + l'option MMC activée, l'app récupère automatiquement <strong style="color:var(--hi-vis)">marque, modèle, couleur et type</strong> du véhicule reconnu.
+      </div>
+    </div>`;
+  }
+
+  // ============ ACTIONS ============
+  const createBtnLabel = hasMmc
+    ? `➕ Créer fiche : ${scanMeta.makeModel}`
+    : '➕ Créer fiche véhicule';
+
+  el('resultContent').innerHTML = `
+    <div class="result-header">
+      <div class="result-status warning">
+        <div class="marker"></div>
+        <span>Hors flotte MATCH!${hasMmc ? ' · données externes' : ''}</span>
+      </div>
+
+      <div class="plate">
+        <div class="plate-band"><span class="stars">★★</span><span class="country">F</span><span class="stars">★★</span></div>
+        <div class="plate-number">${plate}</div>
+      </div>
+
+      <div class="vehicle-headline" ${hasMmc ? '' : 'style="color: var(--text-2)"'}>${headline}</div>
+      <div class="vehicle-sub">${sub}</div>
+
+      ${chips.length ? `<div class="ocr-meta">${chips.join('')}</div>` : ''}
+      ${badges.length ? `<div class="status-bar">${badges.join('')}</div>` : ''}
+    </div>
+
+    ${detailSection}
+    ${estimation}
+
+    <div class="section">
+      <div class="section-title">Actions</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <button class="btn-ghost" onclick="window.toast && window.toast('Pré-remplissage MATCH! avec les données reconnues')">${createBtnLabel}</button>
+        <button class="btn-ghost">📸 Photographier le véhicule</button>
+        <button class="btn-ghost">🔍 Interroger API SIV (option payante)</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Plaques de test · Flotte MATCH!</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        ${Object.keys(MATCH_DB).map(p => `<button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('${p}', {source:'manual'})">${p}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Plaques de test · Prospects (SIV simulé)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        ${Object.keys(SIV_DB).map(p => {
+          const s = SIV_DB[p];
+          const tag = s.financingType === 'PROPRIETE' ? '🟢' : (s.financingType === 'LLD' ? '🟡' : '🔵');
+          return `<button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('${p}', {source:'manual'})">${tag} ${p}</button>`;
+        }).join('')}
+      </div>
+      <div style="margin-top:10px;font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.5">
+        🟢 Propriété (prospect chaud) · 🟡 LLD concurrent · 🔵 LCB/LOA
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Plaques de test · Auto-cote ADEME</div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.5;margin-bottom:10px">
+        Simule un scan caméra avec Plate Recognizer (plaque inconnue + marque/modèle détecté).<br/>
+        L'app cherche dans la base ADEME et calcule la cote affinée automatiquement.<br/>
+        Les 2 lettres de gauche déterminent l'année estimée (LA≈2020, PA≈2023, QA≈2024).
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('PA-100-PA',{source:'platerecognizer',makeModel:'Renault Clio',color:'gray',vehicleType:'sedan',confidence:0.94})">🚗 Clio · 2023</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('QA-200-QA',{source:'platerecognizer',makeModel:'Peugeot 3008',color:'white',vehicleType:'suv',confidence:0.92})">🚙 3008 · 2024</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('LA-300-LA',{source:'platerecognizer',makeModel:'Toyota Yaris',color:'red',vehicleType:'sedan',confidence:0.96})">🚗 Yaris · 2020</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('PA-400-PA',{source:'platerecognizer',makeModel:'Tesla Model 3',color:'black',vehicleType:'sedan',confidence:0.95})">⚡ Tesla M3 · 2023</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('NA-500-NA',{source:'platerecognizer',makeModel:'Renault Trafic',color:'white',vehicleType:'van',confidence:0.91})">🚐 Trafic · 2022</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('MA-600-MA',{source:'platerecognizer',makeModel:'Dacia Sandero',color:'silver',vehicleType:'sedan',confidence:0.93})">🚗 Sandero · 2021</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('QA-700-QA',{source:'platerecognizer',makeModel:'BMW Serie 3',color:'blue',vehicleType:'sedan',confidence:0.97})">🏁 BMW S3 · 2024</button>
+        <button class="btn-ghost" style="width:auto;padding:8px 12px" onclick="window.lookupPlate('PA-800-PA',{source:'platerecognizer',makeModel:'Hyundai Tucson',color:'gray',vehicleType:'suv',confidence:0.93})">🚙 Tucson · 2023</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHistory() {
+  const list = el('historyList');
+  if (state.history.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⊞</div>
+        <div class="empty-title">Aucun scan</div>
+        <div class="empty-text">L'historique des plaques scannées apparaîtra ici</div>
+      </div>`;
+    return;
+  }
+  list.innerHTML = state.history.map((item, idx) => {
+    const time = item.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const sourceLabel = item.scanMeta && item.scanMeta.source === 'platerecognizer' ? ' · API'
+                      : item.scanMeta && item.scanMeta.source === 'tesseract' ? ' · Local' : '';
+
+    // Badge depending on resultType
+    let statusHtml = '';
+    if (item.resultType === 'match') {
+      statusHtml = '<div class="history-status found">FLOTTE</div>';
+    } else if (item.resultType === 'siv') {
+      const score = item.sivData && item.sivData.leadScore;
+      const isHotProspect = item.sivData && item.sivData.financingType === 'PROPRIETE';
+      statusHtml = `<div class="history-status" style="background:${isHotProspect ? 'rgba(255,214,10,0.18)' : 'rgba(96,165,250,0.15)'};color:${isHotProspect ? 'var(--hi-vis)' : 'var(--signal-blue)'}">${score || 'PROSPECT'}</div>`;
+    } else if (item.resultType === 'ademe') {
+      statusHtml = '<div class="history-status" style="background:rgba(255,214,10,0.12);color:var(--hi-vis);border:1px solid rgba(255,214,10,0.3)">ADEME</div>';
+    } else {
+      statusHtml = '<div class="history-status not-found">404</div>';
     }
 
-    // Formater la réponse selon le schéma attendu par l'app Scanner
-    const response = {
-      plate: formatPlate(immat), // AB-123-CD
-      brand: vehicle.brand || vehicle.marque,
-      model: vehicle.model || vehicle.modele,
-      version: vehicle.version || vehicle.finition || '',
-      energy: vehicle.energy || vehicle.energie || 'Essence',
-      color: vehicle.color || vehicle.couleur || '',
-      firstReg: formatDate(vehicle.first_registration || vehicle.date_mec),
-      vin: vehicle.vin || vehicle.num_serie || '',
-      status: vehicle.status || 'En location',
-      customer: vehicle.customer?.name || vehicle.customer_name || '',
-      contractRef: vehicle.activeContract?.ref || vehicle.contract_ref || '',
-      contractStart: formatDate(vehicle.activeContract?.start_date || vehicle.contract_start),
-      contractEnd: formatDate(vehicle.activeContract?.end_date || vehicle.contract_end),
-      duration: `${vehicle.activeContract?.duration_months || vehicle.duration_months || 36} mois`,
-      monthlyRent: formatEur(vehicle.activeContract?.monthly_rent || vehicle.monthly_rent),
-      currentKm: vehicle.current_km || vehicle.km_actuel || 0,
-      contractKm: vehicle.activeContract?.contract_km || vehicle.km_contractuel || 60000,
-      residualValue: formatEur(vehicle.activeContract?.residual_value || vehicle.vr),
-      nextMaintenance: vehicle.next_maintenance || '',
-      location: vehicle.location || vehicle.agence || '',
-    };
+    return `
+      <div class="history-item" data-idx="${idx}">
+        <div class="history-plate">${item.plate}</div>
+        <div class="history-info">
+          <div class="history-model">${item.model}</div>
+          <div class="history-time">${time}${sourceLabel}</div>
+        </div>
+        ${statusHtml}
+      </div>`;
+  }).join('');
+  list.querySelectorAll('.history-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const entry = state.history[parseInt(item.dataset.idx)];
+      if (entry.resultType === 'match') renderResult(entry.data, entry.scanMeta);
+      else if (entry.resultType === 'siv') renderSivProspect(entry.sivData, entry.scanMeta);
+      else if (entry.resultType === 'ademe') renderAdemeProspect(entry.plate, entry.ademeData, entry.scanMeta);
+      else renderNotFound(entry.plate, entry.scanMeta);
+      switchView('result');
+    });
+  });
+}
 
-    return res.json(response);
+function openSettings() {
+  el('apiToken').value = state.settings.token;
+  el('apiRegion').value = state.settings.region;
+  el('switchMmc').classList.toggle('on', state.settings.mmc);
+  el('switchStrict').classList.toggle('on', state.settings.strict);
+  el('regcheckUsername').value = state.settings.regcheckUsername || '';
+  refreshQuotaDisplay();
+  el('settingsModal').classList.add('show');
+}
+function closeSettings() { el('settingsModal').classList.remove('show'); }
+function refreshQuotaDisplay() {
+  const wrap = el('quotaWrap');
+  if (state.quota) {
+    wrap.style.display = 'block';
+    el('quotaUsed').textContent = `${state.quota.used} appels utilisés`;
+    el('quotaTotal').textContent = `/ ${state.quota.max} max`;
+    const pct = (state.quota.used / state.quota.max) * 100;
+    const fill = el('quotaFill');
+    fill.style.width = pct + '%';
+    fill.classList.toggle('warning', pct >= 70 && pct < 90);
+    fill.classList.toggle('danger', pct >= 90);
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+el('btnSettings').addEventListener('click', openSettings);
+el('settingsModal').addEventListener('click', (e) => {
+  if (e.target === el('settingsModal')) closeSettings();
+});
+el('switchMmc').addEventListener('click', () => el('switchMmc').classList.toggle('on'));
+el('switchStrict').addEventListener('click', () => el('switchStrict').classList.toggle('on'));
+
+el('btnSaveSettings').addEventListener('click', () => {
+  state.settings = {
+    token: el('apiToken').value.trim(),
+    region: el('apiRegion').value,
+    mmc: el('switchMmc').classList.contains('on'),
+    strict: el('switchStrict').classList.contains('on'),
+    regcheckUsername: el('regcheckUsername').value.trim(),
+  };
+  saveSettings();
+  refreshEngineUi();
+  closeSettings();
+  toast(state.settings.token ? 'Plate Recognizer activé' : 'Mode OCR local activé');
+});
+
+el('btnTestApi').addEventListener('click', async () => {
+  const token = el('apiToken').value.trim();
+  if (!token) { toast('Saisis un token API d\'abord'); return; }
+  el('btnTestApi').textContent = 'Test…';
+  try {
+    const resp = await fetch('https://api.platerecognizer.com/v1/statistics/', {
+      headers: { 'Authorization': `Token ${token}` }
+    });
+    if (resp.status === 401 || resp.status === 403) {
+      toast('Token invalide', 3000);
+    } else if (resp.ok) {
+      const data = await resp.json();
+      const calls = (data.usage && data.usage.calls) || 0;
+      const total = data.total_calls || (data.usage && data.usage.max_calls) || 2500;
+      state.quota = { used: calls, max: total };
+      refreshQuotaPill();
+      refreshQuotaDisplay();
+      toast(`Token OK · ${calls}/${total} appels ce mois`, 3500);
+    } else {
+      toast(`Erreur ${resp.status}`, 3000);
+    }
   } catch (err) {
-    console.error('Scanner API error:', err);
-    return res.status(500).json({ error: 'internal_error' });
+    toast('Erreur réseau : ' + err.message, 3500);
+  } finally {
+    el('btnTestApi').textContent = 'Tester';
   }
 });
 
-function formatPlate(raw) {
-  const clean = raw.replace(/[^A-Z0-9]/g, '');
-  if (clean.length === 7) {
-    return `${clean.slice(0,2)}-${clean.slice(2,5)}-${clean.slice(5,7)}`;
+el('btnAction').addEventListener('click', async () => {
+  if (!state.stream) {
+    el('btnActionText').textContent = 'Démarrage…';
+    el('btnAction').disabled = true;
+    const ok = await startCamera();
+    el('btnAction').disabled = false;
+    el('btnActionText').textContent = ok ? 'Scanner la plaque' : 'Réessayer';
+  } else {
+    captureAndScan();
   }
-  return raw;
+});
+
+el('btnManual').addEventListener('click', () => {
+  const value = el('manualPlate').value.trim();
+  if (!value) { toast('Saisissez une plaque'); return; }
+  lookupPlate(value, { source: 'manual' });
+});
+
+el('manualPlate').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') el('btnManual').click();
+});
+
+el('manualPlate').addEventListener('input', (e) => {
+  let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (val.length > 2) val = val.slice(0,2) + '-' + val.slice(2);
+  if (val.length > 6) val = val.slice(0,6) + '-' + val.slice(6, 8);
+  e.target.value = val.slice(0, 9);
+});
+
+window.addEventListener('beforeunload', () => {
+  stopCamera();
+  if (state.worker) state.worker.terminate();
+});
+
+// ============================================================
+// MODULE ÉVALUATION REPRISE
+// ============================================================
+
+// Auto-format plaque dans le champ
+el('appraisalPlate').addEventListener('input', (e) => {
+  let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (val.length > 2) val = val.slice(0,2) + '-' + val.slice(2);
+  if (val.length > 6) val = val.slice(0,6) + '-' + val.slice(6, 8);
+  e.target.value = val.slice(0, 9);
+});
+
+// Lookup regcheck.org.uk
+async function fetchRegcheck(plate) {
+  const username = state.settings.regcheckUsername;
+  if (!username) {
+    throw new Error('Saisis ton username regcheck.org.uk dans les réglages ⚙');
+  }
+  // CheckFrance endpoint - returns XML with vehicleJson element
+  const url = `https://www.regcheck.org.uk/api/reg.asmx/CheckFrance?RegistrationNumber=${encodeURIComponent(plate)}&username=${encodeURIComponent(username)}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Erreur API ${resp.status} (token invalide ou crédits épuisés ?)`);
+  }
+  const text = await resp.text();
+  // Parse XML to find vehicleJson
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(text, 'text/xml');
+  const jsonNode = xmlDoc.getElementsByTagName('vehicleJson')[0];
+  if (!jsonNode || !jsonNode.textContent) {
+    throw new Error('Pas de données pour cette plaque');
+  }
+  const data = JSON.parse(jsonNode.textContent);
+  return data;
 }
 
-function formatDate(d) {
-  if (!d) return '';
-  const date = new Date(d);
-  return date.toLocaleDateString('fr-FR');
-}
+el('btnAppraisalLookup').addEventListener('click', async () => {
+  const plate = el('appraisalPlate').value.trim();
+  if (!plate) { toast('Saisis une plaque'); return; }
 
-function formatEur(n) {
-  if (!n && n !== 0) return '';
-  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2 }) + ' €';
-}
-
-module.exports = router;
-
-// --- Dans app.js / server.js, ajouter : ---
-// const scannerRoutes = require('./routes/scanner');
-// app.use('/api/scanner', scannerRoutes);
-"""
-
-
-# =====================================================
-# OPTION B — Si MATCH! est en Python / Django
-# =====================================================
-
-"""
-# --- fichier : scanner/views.py ---
-
-import json
-import os
-from django.http import JsonResponse
-from django.views import View
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-from vehicles.models import Vehicle  # adapter à votre structure
-
-SCANNER_TOKEN = os.environ.get('SCANNER_API_TOKEN', 'match-scanner-2026-secret')
-
-@method_decorator(csrf_exempt, name='dispatch')
-class VehicleByPlateView(View):
-    def dispatch(self, request, *args, **kwargs):
-        # CORS
-        if request.method == 'OPTIONS':
-            response = JsonResponse({})
-            response['Access-Control-Allow-Origin'] = 'https://paja974.github.io'
-            response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-            response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-            return response
-        return super().dispatch(request, *args, **kwargs)
-
-    def get(self, request, immat):
-        # Auth
-        auth = request.META.get('HTTP_AUTHORIZATION', '')
-        if auth != f'Bearer {SCANNER_TOKEN}':
-            return JsonResponse({'error': 'unauthorized'}, status=401)
-
-        # Lookup
-        clean_immat = immat.upper().replace('-', '').replace(' ', '')
-        try:
-            v = Vehicle.objects.select_related('contract', 'customer').get(
-                immatriculation__iregex=clean_immat
-            )
-        except Vehicle.DoesNotExist:
-            return JsonResponse({'error': 'not_found'}, status=404)
-
-        # Response
-        data = {
-            'plate': f'{clean_immat[:2]}-{clean_immat[2:5]}-{clean_immat[5:7]}',
-            'brand': v.marque,
-            'model': v.modele,
-            'version': getattr(v, 'finition', ''),
-            'energy': v.energie,
-            'color': getattr(v, 'couleur', ''),
-            'firstReg': v.date_mec.strftime('%d/%m/%Y') if v.date_mec else '',
-            'vin': getattr(v, 'vin', ''),
-            'status': v.statut,
-            'customer': v.contract.client.nom if hasattr(v, 'contract') and v.contract else '',
-            'contractRef': v.contract.reference if hasattr(v, 'contract') and v.contract else '',
-            'monthlyRent': f'{v.contract.loyer_mensuel:,.2f} €' if hasattr(v, 'contract') and v.contract else '',
-            'currentKm': v.km_actuel or 0,
-            'contractKm': v.contract.km_contractuel if hasattr(v, 'contract') and v.contract else 60000,
-            'residualValue': f'{v.contract.valeur_residuelle:,.2f} €' if hasattr(v, 'contract') and v.contract else '',
-            'location': getattr(v, 'agence', ''),
-        }
-
-        response = JsonResponse(data)
-        response['Access-Control-Allow-Origin'] = 'https://paja974.github.io'
-        return response
-
-# --- urls.py ---
-# urlpatterns += [
-#     path('api/scanner/vehicle-by-plate/<str:immat>', VehicleByPlateView.as_view()),
-# ]
-"""
-
-
-# =====================================================
-# OPTION C — Si MATCH! est en PHP / Laravel
-# =====================================================
-
-"""
-// --- routes/api.php ---
-Route::get('/scanner/vehicle-by-plate/{immat}', [ScannerController::class, 'byPlate'])
-    ->middleware('scanner.auth');
-
-// --- app/Http/Controllers/ScannerController.php ---
-<?php
-namespace App\Http\Controllers;
-
-use Illuminate\Http\Request;
-use App\Models\Vehicle;
-
-class ScannerController extends Controller
-{
-    public function byPlate($immat)
-    {
-        $clean = strtoupper(preg_replace('/[^A-Z0-9]/', '', $immat));
-
-        $vehicle = Vehicle::with(['activeContract', 'customer'])
-            ->whereRaw("REPLACE(immatriculation, '-', '') = ?", [$clean])
-            ->first();
-
-        if (!$vehicle) {
-            return response()->json(['error' => 'not_found'], 404);
-        }
-
-        return response()->json([
-            'plate' => substr($clean,0,2).'-'.substr($clean,2,3).'-'.substr($clean,5,2),
-            'brand' => $vehicle->marque,
-            'model' => $vehicle->modele,
-            // ... adapter les champs
-        ])->header('Access-Control-Allow-Origin', 'https://paja974.github.io');
-    }
-}
-
-// --- app/Http/Middleware/ScannerAuth.php ---
-<?php
-namespace App\Http\Middleware;
-
-class ScannerAuth
-{
-    public function handle($request, $next)
-    {
-        $token = env('SCANNER_API_TOKEN', 'match-scanner-2026-secret');
-        if ($request->bearerToken() !== $token) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-        return $next($request);
-    }
-}
-"""
-
-
-# =====================================================
-# VARIABLE D'ENVIRONNEMENT À AJOUTER SUR SCALINGO
-# =====================================================
-# Dans le dashboard Scalingo > Environment Variables, ajouter :
-#
-#   SCANNER_API_TOKEN = [générer un token aléatoire, ex: openssl rand -hex 32]
-#
-# Ce token sera aussi mis dans les réglages de l'app Scanner (champ "Token MATCH! API")
-
-
-# =====================================================
-# CÔTÉ APP SCANNER — Code JavaScript pour l'appel API
-# =====================================================
-# Ce code sera ajouté dans match-scanner.html
-# Il remplace la recherche locale MATCH_DB par un appel API réel
-
-"""
-// Dans lookupPlate(), remplacer :
-//   const vehicle = MATCH_DB[normalized];
-// Par :
-
-async function fetchFromMatchAPI(plate) {
-  const apiUrl = state.settings.matchApiUrl; // ex: https://match.leasecar.re/api/scanner
-  const apiToken = state.settings.matchApiToken;
-
-  if (!apiUrl || !apiToken) return null;
+  const btn = el('btnAppraisalLookup');
+  const originalText = btn.textContent;
+  btn.textContent = '...';
+  btn.disabled = true;
 
   try {
-    const resp = await fetch(`${apiUrl}/vehicle-by-plate/${encodeURIComponent(plate)}`, {
-      headers: { 'Authorization': `Bearer ${apiToken}` }
-    });
-    if (resp.status === 404) return null;
-    if (!resp.ok) throw new Error(`API ${resp.status}`);
-    return await resp.json();
+    const data = await fetchRegcheck(plate);
+    console.log('Regcheck response:', data);
+
+    // Parse Regcheck response (cf. doc PDF)
+    // Description, RegistrationYear, CarMake, CarModel, FuelType, EngineSize, RegistrationDate
+    const make = (data.CarMake && data.CarMake.CurrentTextValue) || '';
+    const model = (data.CarModel && data.CarModel.CurrentTextValue) || '';
+    const fuel = (data.FuelType && data.FuelType.CurrentTextValue) || '';
+    const year = data.RegistrationYear || '';
+
+    el('ap_brand').value = make;
+    el('ap_model').value = model;
+    el('ap_year').value = year;
+
+    // Map energy
+    const energySelect = el('ap_energy');
+    const fuelLower = fuel.toLowerCase();
+    if (fuelLower.includes('diesel') || fuelLower.includes('gazole')) energySelect.value = 'DIESEL';
+    else if (fuelLower.includes('hybr')) energySelect.value = 'HYBRIDE';
+    else if (fuelLower.includes('elec')) energySelect.value = 'ELECTRIQUE';
+    else energySelect.value = 'ESSENCE';
+
+    // Estimate price from internal table
+    const estimatedPrice = estimatePrice(make, model);
+    if (estimatedPrice && !el('ap_price').value) {
+      el('ap_price').value = estimatedPrice;
+      toast(`Données récupérées · prix estimé ${estimatedPrice.toLocaleString('fr-FR')}€ (à valider)`);
+    } else {
+      toast('Données récupérées · saisis le prix neuf');
+    }
   } catch (err) {
-    console.error('MATCH API error:', err);
-    toast('Erreur API MATCH! : ' + err.message, 3000);
-    return null;
+    toast('Erreur : ' + err.message, 4000);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
   }
+});
+
+// Calcul de l'évaluation
+el('btnComputeAppraisal').addEventListener('click', () => {
+  const brand = el('ap_brand').value.trim();
+  const model = el('ap_model').value.trim();
+  const energy = el('ap_energy').value;
+  const year = parseInt(el('ap_year').value);
+  const km = parseInt(el('ap_km').value);
+  const priceNew = parseInt(el('ap_price').value);
+  const condition = el('ap_condition').value;
+  const segment = el('ap_segment').value;
+
+  const missing = [];
+  if (!brand) missing.push('marque');
+  if (!model) missing.push('modèle');
+  if (!year || year < 1990 || year > 2030) missing.push('année');
+  if (!km || km < 0) missing.push('kilométrage');
+  if (!priceNew || priceNew < 1000) missing.push('prix neuf');
+
+  if (missing.length) {
+    toast('Champs manquants : ' + missing.join(', '), 3500);
+    return;
+  }
+
+  const now = new Date();
+  const ageYears = (now.getFullYear() - year) + (now.getMonth() / 12);
+  const result = computeAppraisal({ priceNew, energy, ageYears, kmCurrent: km, brand, condition, segment });
+
+  renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, condition, segment, ...result });
+});
+
+function renderAppraisalResult(r) {
+  const energyLabel = { ESSENCE: 'Essence', DIESEL: 'Diesel', HYBRIDE: 'Hybride', ELECTRIQUE: 'Électrique' }[r.energy] || r.energy;
+  const energyColor = { ESSENCE: '#e8a845', DIESEL: '#a78bfa', HYBRIDE: '#34d399', ELECTRIQUE: '#60a5fa' }[r.energy];
+  const fmt = n => n.toLocaleString('fr-FR') + ' €';
+  const coefColor = v => v >= 1.03 ? 'var(--signal-green)' : v <= 0.97 ? 'var(--signal-red)' : 'var(--text-1)';
+  const coefSign = v => v >= 1 ? `+${Math.round((v - 1) * 100)}%` : `${Math.round((v - 1) * 100)}%`;
+
+  el('appraisalResult').innerHTML = `
+    <div style="background: var(--bg-1); border-top: 1px solid var(--line); margin-top: 18px;">
+
+      <div class="result-header" style="border-bottom: 1px solid var(--line)">
+        <div class="result-status">
+          <div class="marker"></div>
+          <span>Cote affinée calculée</span>
+        </div>
+        <div class="vehicle-headline">${r.brand} ${r.model}</div>
+        <div class="vehicle-sub">${r.year} · ${r.km.toLocaleString('fr-FR')} km · ${(r.ageYears).toFixed(1)} ans</div>
+        <div class="status-bar">
+          <div class="badge" style="color: ${energyColor}; border-color: ${energyColor}40">${energyLabel}</div>
+          <div class="badge">Prix neuf ${fmt(r.priceNew)}</div>
+          <div class="badge">Coef total ×${r.coefTotal}</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Cote affinée LEASECAR</div>
+        <div style="display: flex; align-items: center; gap: 18px; padding: 18px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--hi-vis)40">
+          <div style="flex: 1">
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">Cote affinée</div>
+            <div style="font-family: var(--font-mono); font-size: 28px; font-weight: 800; color: var(--hi-vis); line-height: 1;">${fmt(r.coteAffinee)}</div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); margin-top: 4px">${r.cotePct}% du prix catalogue</div>
+          </div>
+          <div style="border-left: 1px solid var(--line); padding-left: 18px">
+            <div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px">VR brute (grille)</div>
+            <div style="font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text-2); line-height: 1;">${fmt(r.vrBrut)}</div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 4px">${r.vrPercentBrut}% avant ajustement</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Coefficients d'ajustement</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Marque (${r.brand})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.marque)}">${coefSign(r.coefficients.marque)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Segment (${r.segment || '—'})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.segment)}">${coefSign(r.coefficients.segment)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">État (${r.condition || '—'})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.etat)}">${coefSign(r.coefficients.etat)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Énergie marché (${energyLabel})</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.energie)}">${coefSign(r.coefficients.energie)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">Kilométrage (${r.km.toLocaleString('fr-FR')} km)</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.km)}">${coefSign(r.coefficients.km)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-2);border-radius:4px;border:1px dashed rgba(255,214,10,0.3)">
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--hi-vis)">Marché Réunion</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--signal-green)">${coefSign(r.coefficients.region)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Fourchette de négociation</div>
+        <div class="data-grid">
+          <div class="data-cell">
+            <div class="data-label">Reprise basse (-10%)</div>
+            <div class="data-value" style="color: var(--signal-red)">${fmt(r.repriseLow)}</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">Recommandée</div>
+            <div class="data-value highlight">${fmt(r.repriseRecom)}</div>
+          </div>
+          <div class="data-cell full">
+            <div class="data-label">Reprise haute (+5%)</div>
+            <div class="data-value" style="color: var(--signal-green)">${fmt(r.repriseHigh)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Simulation LLD VO 24 mois / 30 000 km</div>
+        <div class="data-grid">
+          <div class="data-cell">
+            <div class="data-label">VR fin LLD VO</div>
+            <div class="data-value">${fmt(r.relou.vrFinEur)}</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">% VR finale</div>
+            <div class="data-value">${r.relou.vrFinPct}%</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">Amortissement</div>
+            <div class="data-value">${fmt(r.relou.amortissement)}</div>
+          </div>
+          <div class="data-cell">
+            <div class="data-label">Frais financiers</div>
+            <div class="data-value">${fmt(r.relou.fraisFin)}</div>
+          </div>
+          <div class="data-cell full" style="margin-top: 8px; padding: 12px; background: var(--bg-2); border-radius: 6px">
+            <div class="data-label">Loyer total HT estimé</div>
+            <div class="data-value highlight" style="font-size: 22px; margin-top: 4px">${fmt(r.relou.loyerTotalHT)}/mois</div>
+            <div class="data-label" style="margin-top: 6px; font-size: 9px">Financier ${fmt(r.relou.loyerFinHT)} + entretien ${fmt(r.relou.entretien)} · taux 5,8% Réunion</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <button class="btn-ghost" onclick="window.toast && window.toast('Export PDF — à brancher sur backend')">📄 Exporter PDF</button>
+        <button class="btn-ghost" onclick="window.toast && window.toast('Envoyé au client (démo)')">📧 Envoyer par mail</button>
+      </div>
+    </div>
+  `;
 }
-"""
+
+window.lookupPlate = lookupPlate;
+window.toast = toast;
+
+refreshEngineUi();
+setTimeout(() => {
+  if (!state.settings.token) {
+    toast('Configure ton token Plate Recognizer dans ⚙ pour la haute précision', 5000);
+  } else {
+    toast('Plate Recognizer prêt · Mire une plaque', 3000);
+  }
+}, 800);
+</script>
+</body>
+</html>
