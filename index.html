@@ -32,7 +32,7 @@
 <meta name="author" content="SARL 10Positif">
 <meta name="application-name" content="MATCH! Scanner">
 <!-- CSP basique pour limiter exfiltration et XSS (note: inline scripts requis car SPA single-file) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://api.platerecognizer.com https://www.regcheck.org.uk https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://api.platerecognizer.com https://www.regcheck.org.uk; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://api.platerecognizer.com https://www.regcheck.org.uk https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.firebasestorage.app https://*.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://api.platerecognizer.com https://www.regcheck.org.uk https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.gstatic.com; frame-ancestors 'none';">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(), geolocation=()">
 <title>MATCH! Scanner — LEASECAR</title>
@@ -914,6 +914,13 @@
       <button class="btn-primary" id="btnSaveSettings" style="flex: 1.5">Enregistrer</button>
     </div>
 
+    <!-- Section utilisateur Firebase (visible seulement si connecté) -->
+    <div id="firebaseUserSection" style="display:none;margin-top:14px;padding:12px;background:var(--bg-1);border:1px solid var(--line);border-radius:8px">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Compte connecté</div>
+      <div id="firebaseUserEmail" style="font-family:var(--font-mono);font-size:12px;color:var(--hi-vis);font-weight:700;margin-bottom:10px"></div>
+      <button onclick="window.handleFirebaseSignOut && window.handleFirebaseSignOut()" style="width:100%;padding:8px;background:var(--bg-2);border:1px solid var(--signal-red);color:var(--signal-red);border-radius:6px;font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.5px">SE DÉCONNECTER</button>
+    </div>
+
     <!-- Lien discret vers mentions légales -->
     <div style="text-align:center;margin-top:18px;padding-top:12px;border-top:1px solid var(--line)">
       <a href="javascript:void(0)" onclick="window.openLegalModal && window.openLegalModal()" style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-decoration:none;letter-spacing:0.5px">
@@ -943,6 +950,352 @@
   const LICENSE_FINGERPRINT = '10P-MATCH-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10));
   window.__MATCH_LICENSE = { owner: 'SARL 10Positif', build: 'MATCH-PWA-2026.05.08-r4.7', fingerprint: LICENSE_FINGERPRINT };
 })();
+
+// ============================================================================
+// 🔥 FIREBASE — Configuration et adapter de stockage
+// ============================================================================
+// Pour activer Firebase :
+// 1. Va sur https://console.firebase.google.com
+// 2. Crée un projet, active Firestore + Authentication (email/password)
+// 3. Récupère la config et REMPLACE le bloc FIREBASE_CONFIG ci-dessous
+// 4. Recharge l'app → un écran de login apparaîtra
+//
+// Tant que la config n'est pas remplie, l'app utilise localStorage (fallback gracieux).
+// ============================================================================
+
+const FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyDH1LAnfY_h-qnlHiSCPdbHw4TbdJpb-3g',
+  authDomain:        'match-scanner-prod.firebaseapp.com',
+  projectId:         'match-scanner-prod',
+  storageBucket:     'match-scanner-prod.firebasestorage.app',
+  messagingSenderId: '849798705543',
+  appId:             '1:849798705543:web:8238eae1b868af539ca322',
+  measurementId:     'G-8B7P4YRLDR',
+};
+
+// Détecte si Firebase est configuré (au moins un champ rempli avec autre chose que TO_FILL)
+window.__FIREBASE_ENABLED = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== 'TO_FILL';
+
+// Objet global qui sera rempli après le chargement des SDK
+window.__firebase = {
+  app: null,
+  auth: null,
+  db: null,
+  storage: null,
+  user: null,
+  ready: false,
+};
+
+// ============================================================================
+// MODULE FIREBASE ADAPTER
+// Expose les mêmes fonctions que localStorage mais branchées sur Firestore
+// ============================================================================
+
+async function initFirebase() {
+  if (!window.__FIREBASE_ENABLED) {
+    console.log('[Firebase] Désactivé (config TO_FILL) — fallback localStorage');
+    return false;
+  }
+  try {
+    // Charge les SDK Firebase v12 via CDN (modular)
+    // Note : on utilise la version 12.0.0 stable, format ESM browser modules.
+    const FB_VERSION = '12.0.0';
+    const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-app.js`);
+    const {
+      getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+      createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence,
+    } = await import(`https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-auth.js`);
+    const {
+      getFirestore, doc, setDoc, getDoc, deleteDoc, collection,
+      query, where, onSnapshot, serverTimestamp, enableIndexedDbPersistence,
+    } = await import(`https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-firestore.js`);
+
+    const app = initializeApp(FIREBASE_CONFIG);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Persistance locale pour rester connecté entre les sessions
+    await setPersistence(auth, browserLocalPersistence);
+
+    // Activer le cache offline Firestore (l'app fonctionne sans réseau)
+    try {
+      await enableIndexedDbPersistence(db);
+    } catch (e) {
+      console.warn('[Firebase] Persistance IndexedDB non disponible:', e.code);
+    }
+
+    window.__firebase.app = app;
+    window.__firebase.auth = auth;
+    window.__firebase.db = db;
+    window.__firebase._lib = {
+      onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+      doc, setDoc, getDoc, deleteDoc, collection, query, where, onSnapshot, serverTimestamp,
+    };
+    window.__firebase.ready = true;
+
+    // Observer les changements d'auth
+    onAuthStateChanged(auth, (user) => {
+      window.__firebase.user = user;
+      if (user) {
+        console.log('[Firebase] Connecté:', user.email);
+        if (typeof window.onFirebaseUserConnected === 'function') {
+          window.onFirebaseUserConnected(user);
+        }
+      } else {
+        console.log('[Firebase] Déconnecté');
+        if (typeof window.showLoginScreen === 'function') {
+          window.showLoginScreen();
+        }
+      }
+    });
+
+    console.log('[Firebase] SDK initialisé');
+    return true;
+  } catch (e) {
+    console.error('[Firebase] Erreur init:', e);
+    // Afficher un toast pour que l'utilisateur soit informé sans devoir ouvrir DevTools
+    if (typeof window.toast === 'function') {
+      window.toast('Firebase non disponible · mode local', 4000);
+    }
+    return false;
+  }
+}
+
+// Fonctions exposées globalement pour usage depuis le reste du code
+window.firebaseSignIn = async (email, password) => {
+  if (!window.__firebase.ready) throw new Error('Firebase pas prêt');
+  const { signInWithEmailAndPassword } = window.__firebase._lib;
+  return signInWithEmailAndPassword(window.__firebase.auth, email, password);
+};
+
+window.firebaseSignUp = async (email, password) => {
+  if (!window.__firebase.ready) throw new Error('Firebase pas prêt');
+  const { createUserWithEmailAndPassword } = window.__firebase._lib;
+  return createUserWithEmailAndPassword(window.__firebase.auth, email, password);
+};
+
+window.firebaseSignOut = async () => {
+  if (!window.__firebase.ready) return;
+  const { signOut } = window.__firebase._lib;
+  return signOut(window.__firebase.auth);
+};
+
+// ============================================================================
+// FIRESTORE STORAGE ADAPTER
+// Stockage tenant-scoped : tenants/{tenantId}/voInventory/{voId}
+//                        tenants/{tenantId}/prospects/{prospectId}
+// ============================================================================
+
+async function firestoreSaveDoc(collectionPath, docId, data) {
+  if (!window.__firebase.ready || !window.__firebase.user) return false;
+  const { doc, setDoc, serverTimestamp } = window.__firebase._lib;
+  try {
+    const ref = doc(window.__firebase.db, collectionPath, docId);
+    await setDoc(ref, { ...data, _updatedAt: serverTimestamp(), _updatedBy: window.__firebase.user.uid }, { merge: true });
+    return true;
+  } catch (e) {
+    console.error('[Firestore] save error:', e);
+    return false;
+  }
+}
+
+async function firestoreLoadCollection(collectionPath) {
+  if (!window.__firebase.ready || !window.__firebase.user) return null;
+  const { collection, getDoc, doc } = window.__firebase._lib;
+  try {
+    // Note : pour l'instant on lit doc par doc via cache. Si on veut tout charger,
+    // on utilise getDocs (à importer). Cette version sera enrichie après ta config.
+    return null; // Placeholder
+  } catch (e) {
+    console.error('[Firestore] load error:', e);
+    return null;
+  }
+}
+
+async function firestoreDeleteDoc(collectionPath, docId) {
+  if (!window.__firebase.ready || !window.__firebase.user) return false;
+  const { doc, deleteDoc } = window.__firebase._lib;
+  try {
+    await deleteDoc(doc(window.__firebase.db, collectionPath, docId));
+    return true;
+  } catch (e) {
+    console.error('[Firestore] delete error:', e);
+    return false;
+  }
+}
+
+// Subscribe en temps réel à une collection (renvoie unsubscribe)
+function firestoreSubscribe(collectionPath, callback) {
+  if (!window.__firebase.ready || !window.__firebase.user) return () => {};
+  const { collection, onSnapshot } = window.__firebase._lib;
+  try {
+    const ref = collection(window.__firebase.db, collectionPath);
+    return onSnapshot(ref, (snap) => {
+      const items = [];
+      snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+      callback(items);
+    });
+  } catch (e) {
+    console.error('[Firestore] subscribe error:', e);
+    return () => {};
+  }
+}
+
+// Exposer ces fonctions globalement
+window.firestoreSaveDoc = firestoreSaveDoc;
+window.firestoreLoadCollection = firestoreLoadCollection;
+window.firestoreDeleteDoc = firestoreDeleteDoc;
+window.firestoreSubscribe = firestoreSubscribe;
+
+// ============================================================================
+// ÉCRAN DE LOGIN
+// S'affiche en overlay plein écran si Firebase activé ET utilisateur non connecté
+// ============================================================================
+
+function showLoginScreen() {
+  if (document.getElementById('loginOverlay')) return; // Déjà ouvert
+  const html = `
+    <div id="loginOverlay" style="position:fixed;inset:0;background:var(--bg-0);z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto;-webkit-overflow-scrolling:touch">
+      <div style="width:100%;max-width:340px;text-align:center;margin-bottom:30px">
+        <div style="display:inline-grid;place-items:center;width:64px;height:64px;background:var(--hi-vis);border-radius:14px;margin-bottom:14px">
+          <span style="font-family:var(--font-mono);font-weight:900;font-size:30px;color:var(--bg-0)">M!</span>
+        </div>
+        <div style="font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1.2px">MATCH! Scanner</div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);margin-top:4px">Connexion requise</div>
+      </div>
+
+      <div style="width:100%;max-width:340px;background:var(--bg-1);border:1px solid var(--line);border-radius:10px;padding:20px">
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Email</label>
+        <input id="loginEmail" type="email" autocomplete="email" placeholder="ton@email.com" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:14px;box-sizing:border-box">
+
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Mot de passe</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:16px;box-sizing:border-box">
+
+        <div id="loginError" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.4);color:#f87171;padding:10px;border-radius:6px;font-family:var(--font-mono);font-size:11px;line-height:1.5;margin-bottom:12px"></div>
+
+        <button id="loginBtn" onclick="window.doFirebaseLogin && window.doFirebaseLogin()" style="width:100%;padding:13px;background:var(--hi-vis);border:none;color:var(--bg-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">SE CONNECTER</button>
+
+        <button onclick="window.toggleSignupMode && window.toggleSignupMode()" id="signupToggle" style="width:100%;padding:8px;background:none;border:none;color:var(--text-3);font-family:var(--font-mono);font-size:10px;cursor:pointer;text-decoration:underline">Créer un compte</button>
+      </div>
+
+      <div style="margin-top:20px;font-family:var(--font-mono);font-size:9px;color:var(--text-3);text-align:center;line-height:1.5;max-width:300px">
+        Données synchronisées via Firebase (Google Cloud Europe)<br>
+        © 2024-2026 SARL 10Positif
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Submit on Enter
+  document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') window.doFirebaseLogin();
+  });
+  setTimeout(() => document.getElementById('loginEmail').focus(), 100);
+}
+window.showLoginScreen = showLoginScreen;
+
+let __signupMode = false;
+function toggleSignupMode() {
+  __signupMode = !__signupMode;
+  document.getElementById('loginBtn').textContent = __signupMode ? 'CRÉER LE COMPTE' : 'SE CONNECTER';
+  document.getElementById('signupToggle').textContent = __signupMode ? 'J\'ai déjà un compte' : 'Créer un compte';
+  document.getElementById('loginError').style.display = 'none';
+}
+window.toggleSignupMode = toggleSignupMode;
+
+async function doFirebaseLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errorEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+
+  if (!email || !password) {
+    errorEl.textContent = 'Email et mot de passe requis.';
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (password.length < 6) {
+    errorEl.textContent = 'Mot de passe trop court (6 caractères minimum).';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = __signupMode ? 'Création...' : 'Connexion...';
+  errorEl.style.display = 'none';
+
+  try {
+    if (__signupMode) {
+      await window.firebaseSignUp(email, password);
+    } else {
+      await window.firebaseSignIn(email, password);
+    }
+    // L'observateur onAuthStateChanged va s'occuper de la suite
+    const overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.remove();
+  } catch (e) {
+    const msg = {
+      'auth/invalid-email': 'Email invalide.',
+      'auth/user-disabled': 'Compte désactivé.',
+      'auth/user-not-found': 'Aucun compte avec cet email. Clique sur "Créer un compte".',
+      'auth/wrong-password': 'Mot de passe incorrect.',
+      'auth/invalid-credential': 'Email ou mot de passe incorrect.',
+      'auth/email-already-in-use': 'Email déjà utilisé. Connecte-toi.',
+      'auth/weak-password': 'Mot de passe trop faible (6+ caractères).',
+      'auth/network-request-failed': 'Pas de connexion réseau.',
+    }[e.code] || ('Erreur : ' + (e.message || e.code));
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = __signupMode ? 'CRÉER LE COMPTE' : 'SE CONNECTER';
+  }
+}
+window.doFirebaseLogin = doFirebaseLogin;
+
+// Callback appelé quand l'utilisateur est connecté
+window.onFirebaseUserConnected = function(user) {
+  const overlay = document.getElementById('loginOverlay');
+  if (overlay) overlay.remove();
+  // Mettre à jour la section user dans Réglages
+  const section = document.getElementById('firebaseUserSection');
+  const emailEl = document.getElementById('firebaseUserEmail');
+  if (section) section.style.display = 'block';
+  if (emailEl) emailEl.textContent = user.email;
+  // Refresh branding pour afficher l'indicateur "☁ SYNC"
+  if (typeof window.applyTenantBranding === 'function') {
+    window.applyTenantBranding();
+  }
+  if (typeof window.toast === 'function') {
+    window.toast(`✓ Connecté : ${user.email}`, 2500);
+  }
+};
+
+window.handleFirebaseSignOut = async function() {
+  if (!confirm('Se déconnecter ?\n\nTes données locales restent intactes mais tu ne pourras plus synchroniser jusqu\'à la prochaine connexion.')) return;
+  try {
+    await window.firebaseSignOut();
+    const section = document.getElementById('firebaseUserSection');
+    if (section) section.style.display = 'none';
+    // Fermer la modal Réglages si ouverte
+    const settingsModal = document.getElementById('settingsModal');
+    if (settingsModal) settingsModal.classList.remove('show');
+    // showLoginScreen sera appelé automatiquement par onAuthStateChanged
+  } catch (e) {
+    if (typeof window.toast === 'function') {
+      window.toast('Erreur déconnexion : ' + e.message, 4000);
+    }
+  }
+};
+
+// Lancer init Firebase au démarrage (avant tout le reste)
+if (window.__FIREBASE_ENABLED) {
+  initFirebase().then(ok => {
+    if (ok && !window.__firebase.user) {
+      // Pas encore connecté → afficher l'écran de login
+      showLoginScreen();
+    }
+  });
+}
 
 const MATCH_DB = {
   'AB-123-CD': { plate: 'AB-123-CD', brand: 'Renault', model: 'Clio V', version: '1.0 TCe 90 Equilibre', energy: 'Essence', fuelColor: '#e8a845', color: 'Blanc Glacier', firstReg: '14/03/2024', vin: 'VF1RJB00X70123456', status: 'En location', statusType: 'active', customer: 'CABINET DUPONT & ASSOCIÉS', contractRef: 'LLD-2024-00831', contractStart: '15/03/2024', contractEnd: '14/03/2027', duration: '36 mois', monthlyRent: '289,00 €', currentKm: 28450, contractKm: 60000, residualValue: '8 920,00 €', nextMaintenance: '30 000 km', location: 'Saint-Denis (974)' },
@@ -4348,7 +4701,11 @@ function applyTenantBranding() {
   const t = getActiveTenant();
   // Nom dans la topbar
   const subEl = document.querySelector('.brand-sub');
-  if (subEl) subEl.textContent = `${t.name} · OCR LOCAL`;
+  if (subEl) {
+    const synced = window.__firebase && window.__firebase.user;
+    const syncLabel = synced ? '☁ SYNC' : 'LOCAL';
+    subEl.textContent = `${t.name} · ${syncLabel}`;
+  }
   // Titre fenêtre
   document.title = `MATCH! Scanner — ${t.name}`;
   // Couleur thème (limite : on garde l'orange, mais on pourrait théoriser dynamic)
@@ -4397,6 +4754,12 @@ function loadProspects() {
 function saveProspects(list) {
   try { localStorage.setItem(getProspectsKey(), JSON.stringify(list)); } catch (e) {
     toast('Stockage saturé. Exporte tes prospects en CSV puis supprime les anciens.', 5000);
+  }
+  // Sync Firestore (en parallèle, ne bloque pas l'UI)
+  if (window.__firebase && window.__firebase.ready && window.__firebase.user) {
+    const tenantId = getActiveTenant().id;
+    window.firestoreSaveDoc(`tenants/${tenantId}/state`, 'prospects', { list, count: list.length })
+      .catch(e => console.warn('[Firestore] sync prospects failed:', e));
   }
 }
 
@@ -5192,6 +5555,14 @@ function loadVoInventory() {
 function saveVoInventory(list) {
   try { localStorage.setItem(getVoKey(), JSON.stringify(list)); } catch (e) {
     toast('Stockage saturé.', 4000);
+  }
+  // Sync Firestore (en parallèle, ne bloque pas l'UI)
+  if (window.__firebase && window.__firebase.ready && window.__firebase.user) {
+    const tenantId = getActiveTenant().id;
+    // Stratégie simple : on stocke la liste complète sous tenants/{tenantId}/state/voInventory
+    // (plus simple à gérer pour cette V1 que doc-par-doc)
+    window.firestoreSaveDoc(`tenants/${tenantId}/state`, 'voInventory', { list, count: list.length })
+      .catch(e => console.warn('[Firestore] sync VO failed:', e));
   }
 }
 
@@ -6925,6 +7296,93 @@ refreshEngineUi();
 // Initialiser le multi-tenant (crée LEASECAR par défaut s'il n'existe pas)
 loadTenants();
 applyTenantBranding();
+
+// ============================================================
+// SUBSCRIPTIONS FIRESTORE — temps réel
+// ============================================================
+// Quand un autre utilisateur modifie le stock VO ou les prospects ailleurs,
+// on reçoit l'update et on met à jour le localStorage local.
+// Les unsubscribers sont stockés pour pouvoir basculer de tenant proprement.
+window.__firestoreUnsubs = window.__firestoreUnsubs || [];
+
+function setupFirestoreSync() {
+  if (!window.__firebase || !window.__firebase.ready || !window.__firebase.user) return;
+  // Nettoyer les anciennes subscriptions (changement de tenant)
+  window.__firestoreUnsubs.forEach(unsub => { try { unsub(); } catch(e){} });
+  window.__firestoreUnsubs = [];
+
+  const tenantId = getActiveTenant().id;
+  const { doc, onSnapshot } = window.__firebase._lib;
+
+  // Sync stock VO
+  try {
+    const voRef = doc(window.__firebase.db, `tenants/${tenantId}/state/voInventory`);
+    const unsubVo = onSnapshot(voRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.list)) {
+          // Mettre à jour le localStorage SANS re-déclencher saveVoInventory
+          // (sinon boucle infinie)
+          try { localStorage.setItem(getVoKey(), JSON.stringify(data.list)); } catch(e){}
+          // Si l'overlay stock VO est ouvert, rafraîchir
+          const overlay = document.getElementById('voInventoryOverlay');
+          if (overlay) {
+            overlay.remove();
+            if (typeof window.openVoInventory === 'function') window.openVoInventory();
+          }
+          console.log(`[Firestore] VO sync : ${data.list.length} véhicules`);
+        }
+      }
+    }, (err) => console.warn('[Firestore] VO subscription error:', err));
+    window.__firestoreUnsubs.push(unsubVo);
+
+    // Sync prospects
+    const prRef = doc(window.__firebase.db, `tenants/${tenantId}/state/prospects`);
+    const unsubPr = onSnapshot(prRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.list)) {
+          try { localStorage.setItem(getProspectsKey(), JSON.stringify(data.list)); } catch(e){}
+          // Si l'overlay prospects est ouvert, rafraîchir
+          const overlay = document.getElementById('prospectsListOverlay');
+          if (overlay) {
+            overlay.remove();
+            if (typeof window.openProspectsList === 'function') window.openProspectsList();
+          }
+          console.log(`[Firestore] Prospects sync : ${data.list.length} fiches`);
+        }
+      }
+    }, (err) => console.warn('[Firestore] Prospects subscription error:', err));
+    window.__firestoreUnsubs.push(unsubPr);
+
+    if (typeof toast === 'function') toast(`☁ Sync activée · ${tenantId}`, 2000);
+  } catch (e) {
+    console.warn('[Firestore] Setup sync failed:', e);
+  }
+}
+window.setupFirestoreSync = setupFirestoreSync;
+
+// Activer la sync quand l'utilisateur se connecte (après le callback de login)
+const _origOnConnected = window.onFirebaseUserConnected;
+window.onFirebaseUserConnected = function(user) {
+  if (_origOnConnected) _origOnConnected(user);
+  setTimeout(() => setupFirestoreSync(), 500);
+};
+
+// Si on est déjà connecté au démarrage, lancer la sync
+if (window.__firebase && window.__firebase.user) {
+  setTimeout(() => setupFirestoreSync(), 1000);
+}
+
+// Quand on bascule de tenant, re-setup les subscriptions
+const _origSetActiveTenant = window.setActiveTenant;
+if (typeof _origSetActiveTenant === 'function') {
+  window.setActiveTenant = function(id) {
+    _origSetActiveTenant(id);
+    setupFirestoreSync();
+  };
+}
+
 setTimeout(() => {
   if (!state.settings.token) {
     toast('Configure ton token Plate Recognizer dans ⚙ pour la haute précision', 5000);
