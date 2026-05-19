@@ -32,7 +32,7 @@
 <meta name="author" content="SARL 10Positif">
 <meta name="application-name" content="MATCH! Scanner">
 <!-- CSP basique pour limiter exfiltration et XSS (note: inline scripts requis car SPA single-file) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://api.platerecognizer.com https://www.regcheck.org.uk https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.firebasestorage.app https://*.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://api.platerecognizer.com https://www.regcheck.org.uk https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.gstatic.com; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://api.platerecognizer.com https://www.regcheck.org.uk https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.firebasestorage.app https://*.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://api.platerecognizer.com https://www.regcheck.org.uk https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.gstatic.com; frame-ancestors 'none';">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(), geolocation=()">
 <title>MATCH! Scanner — LEASECAR</title>
@@ -898,6 +898,15 @@
       </div>
     </div>
 
+    <div class="field" style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line)">
+      <label class="field-label">TAEG financement (%)</label>
+      <input type="number" min="0" max="30" step="0.1" class="field-input" id="settingsTaeg" placeholder="5.9" autocomplete="off" />
+      <div class="field-help">
+        Taux annuel utilisé pour calculer les loyers mensuels des propositions VO et reprise.
+        Standard auto 2026 : 4.9% à 6.9% selon la marge souhaitée.
+      </div>
+    </div>
+
     <div id="quotaWrap" style="display:none">
       <label class="field-label" style="margin-top: 16px">Quota mensuel</label>
       <div class="quota-display">
@@ -996,19 +1005,54 @@ async function initFirebase() {
     console.log('[Firebase] Désactivé (config TO_FILL) — fallback localStorage');
     return false;
   }
+
+  // Stratégie multi-CDN : on essaie gstatic, puis jsdelivr en fallback
+  const FB_VERSION = '12.0.0';
+  const cdnUrls = [
+    'https://www.gstatic.com/firebasejs',
+    'https://cdn.jsdelivr.net/npm/firebase',
+  ];
+
+  let loaded = null;
+  let lastError = null;
+
+  for (const cdn of cdnUrls) {
+    try {
+      console.log('[Firebase] Tentative chargement depuis', cdn);
+      const base = cdn.includes('jsdelivr') ? `${cdn}@${FB_VERSION}/firebase-app.js` : `${cdn}/${FB_VERSION}/firebase-app.js`;
+      const authUrl = cdn.includes('jsdelivr') ? `${cdn}@${FB_VERSION}/firebase-auth.js` : `${cdn}/${FB_VERSION}/firebase-auth.js`;
+      const fsUrl = cdn.includes('jsdelivr') ? `${cdn}@${FB_VERSION}/firebase-firestore.js` : `${cdn}/${FB_VERSION}/firebase-firestore.js`;
+
+      const appModule = await import(base);
+      const authModule = await import(authUrl);
+      const fsModule = await import(fsUrl);
+      loaded = { appModule, authModule, fsModule };
+      console.log('[Firebase] Modules chargés depuis', cdn);
+      break;
+    } catch (e) {
+      lastError = e;
+      console.warn('[Firebase] Échec', cdn, ':', e.message);
+    }
+  }
+
+  if (!loaded) {
+    console.error('[Firebase] Aucun CDN n\'a fonctionné. Dernière erreur :', lastError);
+    if (typeof window.toast === 'function') {
+      window.toast('Firebase indisponible · mode local. Vérifie ta connexion.', 4500);
+    }
+    return false;
+  }
+
   try {
-    // Charge les SDK Firebase v12 via CDN (modular)
-    // Note : on utilise la version 12.0.0 stable, format ESM browser modules.
-    const FB_VERSION = '12.0.0';
-    const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-app.js`);
+    const { initializeApp } = loaded.appModule;
     const {
       getAuth, onAuthStateChanged, signInWithEmailAndPassword,
       createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence,
-    } = await import(`https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-auth.js`);
+    } = loaded.authModule;
     const {
       getFirestore, doc, setDoc, getDoc, deleteDoc, collection,
       query, where, onSnapshot, serverTimestamp, enableIndexedDbPersistence,
-    } = await import(`https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-firestore.js`);
+    } = loaded.fsModule;
 
     const app = initializeApp(FIREBASE_CONFIG);
     const auth = getAuth(app);
@@ -1143,6 +1187,41 @@ function firestoreSubscribe(collectionPath, callback) {
 
 // Exposer ces fonctions globalement
 window.firestoreSaveDoc = firestoreSaveDoc;
+
+// ============================================================
+// LOG D'ACTIVITÉ — Traçabilité minimale (login + cote affinée)
+// ============================================================
+// Écrit un événement dans tenants/{tenantId}/logs/{logId}.
+// Données collectées : type d'action, timestamp, user UID, payload minimal.
+// Pas d'IP côté client (Firebase ne l'expose pas), mais le user-agent permet
+// d'identifier l'appareil/navigateur en cas d'enquête.
+// Cette fonction est non-bloquante : si Firebase est indispo, on log juste en console.
+async function logActivity(actionType, payload) {
+  try {
+    if (!window.__firebase || !window.__firebase.ready || !window.__firebase.user) return;
+    const { doc, setDoc, serverTimestamp } = window.__firebase._lib;
+    if (!doc || !setDoc) return;
+    // Récupération du tenant actif
+    const tenantId = (typeof getActiveTenant === 'function') ? getActiveTenant().id : 'unknown';
+    const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const logRef = doc(window.__firebase.db, `tenants/${tenantId}/logs/${logId}`);
+    await setDoc(logRef, {
+      type: actionType,
+      payload: payload || {},
+      ts: serverTimestamp(),
+      tsClient: Date.now(),
+      uid: window.__firebase.user.uid,
+      email: window.__firebase.user.email || null,
+      userAgent: navigator.userAgent.slice(0, 200),
+      // Empreinte de licence pour traçabilité forensic
+      fp: (window.__MATCH_LICENSE && window.__MATCH_LICENSE.fingerprint) || null,
+    });
+  } catch (e) {
+    // Silencieux : un log raté ne doit JAMAIS bloquer l'utilisateur
+    console.warn('[Log] échec:', e.code || e.message);
+  }
+}
+window.logActivity = logActivity;
 window.firestoreLoadCollection = firestoreLoadCollection;
 window.firestoreDeleteDoc = firestoreDeleteDoc;
 window.firestoreSubscribe = firestoreSubscribe;
@@ -1267,6 +1346,11 @@ window.onFirebaseUserConnected = function(user) {
   }
   if (typeof window.toast === 'function') {
     window.toast(`✓ Connecté : ${user.email}`, 2500);
+  }
+  // LOG : login utilisateur
+  if (typeof window.logActivity === 'function') {
+    // Délai pour laisser le tenant se charger
+    setTimeout(() => window.logActivity('login', { email: user.email }), 1500);
   }
 };
 
@@ -2111,6 +2195,14 @@ const ADEME_DB = {
   'genesis gv70': { brand:'Genesis', model:'GV70', segment:'premium', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:10, co2:170, priceNew:62000, yearMin:2021, yearMax:2026 },
   'genesis gv80': { brand:'Genesis', model:'GV80', segment:'premium', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:13, co2:200, priceNew:78000, yearMin:2020, yearMax:2026 },
   'pininfarina battista': { brand:'Pininfarina', model:'Battista', segment:'premium', energies:['ELECTRIQUE'], defaultEnergy:'ELECTRIQUE', fiscalPower:18, co2:0, priceNew:200000, yearMin:2022, yearMax:2026 },
+  // === Marqueurs internes 10P-FP (ne pas retirer) ===
+  // Empreintes de propriété : modèles peu courants à La Réunion avec graphies
+  // signatures. Si la base est copiée, ces entrées sont la preuve.
+  'sangyong tivoli grand': { brand:'SangYong', model:'Tivoli Grand', segment:'suv', energies:['ESSENCE','DIESEL'], defaultEnergy:'ESSENCE', fiscalPower:7, co2:155, priceNew:28500, yearMin:2020, yearMax:2024 },
+  'opel insignia ots': { brand:'Opel', model:'Insignia OTS', segment:'familiale', energies:['ESSENCE','DIESEL'], defaultEnergy:'DIESEL', fiscalPower:8, co2:135, priceNew:34200, yearMin:2019, yearMax:2023 },
+  'rovermini cooper s': { brand:'RoverMini', model:'Cooper S', segment:'citadine', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:5, co2:140, priceNew:24800, yearMin:2002, yearMax:2006 },
+  'caterham super seven 600': { brand:'Caterham', model:'Super Seven 600', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:135, priceNew:42500, yearMin:2020, yearMax:2026 },
+  'morgan plus 4 974': { brand:'Morgan', model:'Plus 4 974', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:8, co2:165, priceNew:78500, yearMin:2020, yearMax:2026 },
 };
 // ============================================================
 // GRILLE VR LEASECAR — Calibrée sur sources constructeurs réelles
@@ -2432,12 +2524,37 @@ function computeAppraisal({ priceNew, energy, ageYears, kmCurrent, brand, condit
 const STORAGE_KEY = 'matchScannerSettings_v1';
 const state = { stream: null, scanning: false, history: [], worker: null, settings: loadSettings(), quota: null };
 
+// ============================================================
+// CALCULATEUR DE LOYER FINANCEMENT — Annuité constante
+// ============================================================
+// Formule : M = C × t / (1 - (1 + t)^-n)
+//   M = mensualité
+//   C = capital financé
+//   t = taux mensuel (TAEG / 12)
+//   n = durée en mois
+// ============================================================
+function calculateMonthlyPayment(capital, taegPct, durationMonths) {
+  if (!capital || capital <= 0 || !durationMonths || durationMonths <= 0) return 0;
+  const t = (taegPct / 100) / 12;
+  if (t === 0) return capital / durationMonths; // crédit gratuit
+  const m = capital * t / (1 - Math.pow(1 + t, -durationMonths));
+  return Math.round(m);
+}
+window.calculateMonthlyPayment = calculateMonthlyPayment;
+
+// Calcule le coût total du crédit (utile pour afficher le TAEG effectif)
+function calculateCreditCost(capital, taegPct, durationMonths) {
+  const monthly = calculateMonthlyPayment(capital, taegPct, durationMonths);
+  return monthly * durationMonths - capital;
+}
+window.calculateCreditCost = calculateCreditCost;
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', ...JSON.parse(raw) };
+    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 5.9, ...JSON.parse(raw) };
   } catch (e) {}
-  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '' };
+  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 5.9 };
 }
 function saveSettings() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings)); } catch (e) {}
@@ -3469,6 +3586,70 @@ function openPicker(type) {
       document.getElementById('ademeManualModel').value = val;
       document.getElementById('ademeManualModelBtn').querySelector('span').textContent = val;
     };
+  } else if (type === 'voBrandPicker') {
+    title = 'Marque du véhicule';
+    // Liste unique des marques ADEME
+    const brands = [...new Set(Object.values(ADEME_DB).map(v => v.brand))].sort();
+    options = brands;
+    currentValue = document.getElementById('voBrand') ? document.getElementById('voBrand').value : '';
+    onPick = (val) => {
+      document.getElementById('voBrand').value = val;
+      document.getElementById('voBrandBtn').querySelector('span').textContent = val;
+      // Réinitialiser le modèle quand on change de marque
+      const modelInput = document.getElementById('voModel');
+      const modelBtn = document.getElementById('voModelBtn');
+      if (modelInput) modelInput.value = '';
+      if (modelBtn) {
+        modelBtn.querySelector('span').textContent = '— Choisir —';
+        modelBtn.style.color = 'var(--hi-vis)';
+        modelBtn.style.opacity = '1';
+        modelBtn.disabled = false;
+      }
+    };
+  } else if (type === 'voModelPicker') {
+    title = 'Modèle';
+    const brandSel = document.getElementById('voBrand').value;
+    if (!brandSel) { toast('Choisis d\'abord la marque', 2500); return; }
+    // Liste des modèles de cette marque dans ADEME
+    const models = Object.values(ADEME_DB)
+      .filter(v => v.brand === brandSel)
+      .map(v => v.model);
+    options = [...new Set(models)].sort();
+    if (options.length === 0) {
+      toast('Aucun modèle ADEME pour ' + brandSel + '. Passe en saisie manuelle.', 3500);
+      return;
+    }
+    currentValue = document.getElementById('voModel') ? document.getElementById('voModel').value : '';
+    onPick = (val) => {
+      document.getElementById('voModel').value = val;
+      document.getElementById('voModelBtn').querySelector('span').textContent = val;
+      // Auto-remplir l'énergie par défaut et le prix neuf depuis ADEME
+      const ademeEntry = Object.values(ADEME_DB).find(v => v.brand === brandSel && v.model === val);
+      if (ademeEntry) {
+        // Énergie par défaut
+        if (ademeEntry.defaultEnergy) {
+          document.getElementById('voEnergy').value = ademeEntry.defaultEnergy;
+          document.getElementById('voEnergyBtn').querySelector('span').textContent = ademeEntry.defaultEnergy;
+        }
+        toast(`✓ Données ADEME récupérées (${ademeEntry.defaultEnergy})`, 2000);
+      }
+    };
+  } else if (type === 'voEnergyPicker') {
+    title = 'Énergie';
+    // Si on a une marque/modèle, on filtre les énergies disponibles
+    const brandSel = document.getElementById('voBrand').value;
+    const modelSel = document.getElementById('voModel').value;
+    const ademeEntry = (brandSel && modelSel) ? Object.values(ADEME_DB).find(v => v.brand === brandSel && v.model === modelSel) : null;
+    if (ademeEntry && ademeEntry.energies && ademeEntry.energies.length) {
+      options = ademeEntry.energies;
+    } else {
+      options = ['ESSENCE', 'DIESEL', 'HYBRIDE', 'ELECTRIQUE'];
+    }
+    currentValue = document.getElementById('voEnergy') ? document.getElementById('voEnergy').value : '';
+    onPick = (val) => {
+      document.getElementById('voEnergy').value = val;
+      document.getElementById('voEnergyBtn').querySelector('span').textContent = val;
+    };
   } else if (type === 'apBrand') {
     title = 'Marque du véhicule à reprendre';
     options = [...new Set(Object.values(ADEME_DB).map(v => v.brand))].sort();
@@ -4004,6 +4185,7 @@ function openSettings() {
   el('switchMmc').classList.toggle('on', state.settings.mmc);
   el('switchStrict').classList.toggle('on', state.settings.strict);
   el('regcheckUsername').value = state.settings.regcheckUsername || '';
+  el('settingsTaeg').value = state.settings.taeg || 5.9;
   refreshQuotaDisplay();
   el('settingsModal').classList.add('show');
 }
@@ -4038,6 +4220,7 @@ el('btnSaveSettings').addEventListener('click', () => {
     mmc: el('switchMmc').classList.contains('on'),
     strict: el('switchStrict').classList.contains('on'),
     regcheckUsername: el('regcheckUsername').value.trim(),
+    taeg: parseFloat(el('settingsTaeg').value) || 5.9,
   };
   saveSettings();
   refreshEngineUi();
@@ -4377,6 +4560,21 @@ function doComputeAppraisal({ brand, model, energy, year, km, priceNew, conditio
   }
 
   renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, condition, segment, desirability, collectionInfo, ...result });
+
+  // LOG : cote affinée calculée
+  if (typeof window.logActivity === 'function') {
+    window.logActivity('appraisal', {
+      brand: brand || null,
+      model: model || null,
+      year: year || null,
+      energy: energy || null,
+      km: km || null,
+      priceNew: priceNew || null,
+      coteAffinee: result.coteAffinee || null,
+      isCollection: !!result.collectionInfo,
+      desirability: desirability || null,
+    });
+  }
 }
 
 // ============================================================
@@ -4606,11 +4804,12 @@ function renderAppraisalResult(r) {
         </div>
       </div>` : ''}
 
-      <div class="section" style="background:var(--bg-2);border:1px dashed var(--hi-vis)40;border-radius:8px;margin:14px 18px;padding:14px">
-        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">💡 Étape suivante</div>
-        <div style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-1);line-height:1.6">
-          Pour proposer un véhicule du parc VO à ce prospect avec sa reprise en apport, va sur <strong style="color:var(--hi-vis)">🚗 Stock VO</strong> en haut, choisis un véhicule, puis tape sur <strong style="color:var(--hi-vis)">"🎯 Proposer à un prospect"</strong>.
+      <div class="section" style="background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:8px;margin:14px 0;padding:14px">
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--hi-vis);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;font-weight:700">💼 Proposition commerciale</div>
+        <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-1);line-height:1.6;margin-bottom:10px">
+          Transforme cette cote de reprise en proposition pour ton client : choisis un véhicule du stock VO.
         </div>
+        <button onclick="window.openProposalFromAppraisal && window.openProposalFromAppraisal(${r.repriseRecom})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 CHOISIR UN VO ET CRÉER LA PROPOSITION</button>
       </div>
 
       <div class="actions-row">
@@ -4702,7 +4901,7 @@ function applyTenantBranding() {
   // Nom dans la topbar
   const subEl = document.querySelector('.brand-sub');
   if (subEl) {
-    const synced = window.__firebase && window.__firebase.user;
+    const synced = !!(window.__firebase && window.__firebase.user);
     const syncLabel = synced ? '☁ SYNC' : 'LOCAL';
     subEl.textContent = `${t.name} · ${syncLabel}`;
   }
@@ -5662,6 +5861,7 @@ function openVoInventory() {
             ${v.notes ? `<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);font-style:italic;margin-bottom:8px">${v.notes}</div>` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button onclick="window.openMatchVoToProspect && window.openMatchVoToProspect('${v.id}')" style="flex:1;min-width:140px;padding:8px;background:var(--hi-vis);border:none;color:var(--bg-0);border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">🎯 Proposer à un prospect</button>
+              <button onclick="window.openVoProposal && window.openVoProposal('${v.id}')" style="flex:1;min-width:120px;padding:8px;background:var(--bg-2);border:1px solid var(--hi-vis);color:var(--hi-vis);border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">💼 Proposition</button>
               <button onclick="window.openEditVoVehicle && window.openEditVoVehicle('${v.id}')" style="padding:8px 10px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-1);border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer">✏️</button>
               <button onclick="window.deleteVoVehicle && window.deleteVoVehicle('${v.id}')" style="padding:8px 10px;background:none;border:1px solid var(--line);color:var(--signal-red);border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer">✕</button>
             </div>
@@ -5676,6 +5876,8 @@ window.openVoInventory = openVoInventory;
 function openAddVoVehicle(existing) {
   const v = existing || { id: 'vo_' + Date.now(), photos: [] };
   window.__voPhotos = v.photos || [];
+  // État local : mode manuel (saisie libre) ou auto (pickers ADEME)
+  window.__voManualMode = !!(existing && existing._manual);
   const html = `
     <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2100;overflow-y:auto;-webkit-overflow-scrolling:touch" id="voEditOverlay">
       <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
@@ -5685,12 +5887,53 @@ function openAddVoVehicle(existing) {
       <div style="padding:18px;background:var(--bg-0)">
         <input type="hidden" id="voId" value="${v.id}">
 
-        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Marque *</label>
-        <input id="voBrand" type="text" value="${v.brand || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
+        <!-- Toggle mode auto/manuel -->
+        <div style="display:flex;gap:6px;background:var(--bg-1);border:1px solid var(--line);border-radius:6px;padding:3px;margin-bottom:14px">
+          <button id="voModeAutoBtn" onclick="window.toggleVoMode && window.toggleVoMode(false)" style="flex:1;padding:8px;background:${window.__voManualMode ? 'transparent' : 'var(--hi-vis)'};color:${window.__voManualMode ? 'var(--text-2)' : 'var(--bg-0)'};border:none;border-radius:4px;font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🔽 PICKER ADEME</button>
+          <button id="voModeManualBtn" onclick="window.toggleVoMode && window.toggleVoMode(true)" style="flex:1;padding:8px;background:${window.__voManualMode ? 'var(--hi-vis)' : 'transparent'};color:${window.__voManualMode ? 'var(--bg-0)' : 'var(--text-2)'};border:none;border-radius:4px;font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.5px">✏ SAISIE MANUELLE</button>
+        </div>
 
-        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Modèle *</label>
-        <input id="voModel" type="text" value="${v.model || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
+        <!-- MODE AUTO : pickers ADEME -->
+        <div id="voAutoMode" style="display:${window.__voManualMode ? 'none' : 'block'}">
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Marque *</label>
+          <button type="button" id="voBrandBtn" onclick="window.openPicker && window.openPicker('voBrandPicker')" style="width:100%;padding:12px 14px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;font-weight:600;text-align:left;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:12px">
+            <span>${v.brand || '— Choisir —'}</span>
+            <span style="color:var(--hi-vis)">▾</span>
+          </button>
+          <input type="hidden" id="voBrand" value="${v.brand || ''}">
 
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Modèle *</label>
+          <button type="button" id="voModelBtn" onclick="window.openPicker && window.openPicker('voModelPicker')" style="width:100%;padding:12px 14px;background:var(--bg-2);border:1px solid var(--line);color:${v.brand ? 'var(--hi-vis)' : 'var(--text-3)'};border-radius:6px;font-family:var(--font-mono);font-size:13px;font-weight:600;text-align:left;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:12px;opacity:${v.brand ? '1' : '0.5'}" ${v.brand ? '' : 'disabled'}>
+            <span>${v.model || (v.brand ? '— Choisir —' : '— Choisis d\'abord la marque —')}</span>
+            <span style="color:var(--hi-vis)">▾</span>
+          </button>
+          <input type="hidden" id="voModel" value="${v.model || ''}">
+
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Énergie *</label>
+          <button type="button" id="voEnergyBtn" onclick="window.openPicker && window.openPicker('voEnergyPicker')" style="width:100%;padding:12px 14px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;font-weight:600;text-align:left;display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:12px">
+            <span>${v.energy || '— Choisir —'}</span>
+            <span style="color:var(--hi-vis)">▾</span>
+          </button>
+          <input type="hidden" id="voEnergy" value="${v.energy || ''}">
+        </div>
+
+        <!-- MODE MANUEL : champs texte libres -->
+        <div id="voManualMode" style="display:${window.__voManualMode ? 'block' : 'none'}">
+          <div style="padding:8px 10px;background:#f59e0b15;border:1px dashed #f59e0b60;border-radius:5px;font-family:var(--font-mono);font-size:9.5px;color:var(--text-2);line-height:1.5;margin-bottom:12px">
+            💡 Saisie manuelle activée. À utiliser si le modèle n'est pas dans la base ADEME.
+          </div>
+
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Marque *</label>
+          <input id="voBrandManual" type="text" value="${v.brand || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
+
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Modèle *</label>
+          <input id="voModelManual" type="text" value="${v.model || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
+
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Énergie *</label>
+          <input id="voEnergyManual" type="text" value="${v.energy || ''}" placeholder="Essence / Diesel / Hybride / Électrique" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
+        </div>
+
+        <!-- CHAMPS COMMUNS aux 2 modes -->
         <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Version / Finition</label>
         <input id="voVersion" type="text" value="${v.version || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
 
@@ -5704,9 +5947,6 @@ function openAddVoVehicle(existing) {
             <input id="voKm" type="number" min="0" value="${v.km || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
           </div>
         </div>
-
-        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Énergie</label>
-        <input id="voEnergy" type="text" value="${v.energy || ''}" placeholder="Essence / Diesel / Hybride / Électrique" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
 
         <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Plaque (si déjà immat.)</label>
         <input id="voPlate" type="text" value="${v.plate || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:12px">
@@ -5733,6 +5973,52 @@ function openAddVoVehicle(existing) {
   document.body.insertAdjacentHTML('beforeend', html);
 }
 window.openAddVoVehicle = openAddVoVehicle;
+
+// Bascule mode auto / manuel
+window.toggleVoMode = function(manual) {
+  window.__voManualMode = manual;
+  // Copier les valeurs entre les deux modes pour ne rien perdre
+  if (manual) {
+    // Auto → Manuel
+    const b = document.getElementById('voBrand');
+    const m = document.getElementById('voModel');
+    const e = document.getElementById('voEnergy');
+    if (b) document.getElementById('voBrandManual').value = b.value;
+    if (m) document.getElementById('voModelManual').value = m.value;
+    if (e) document.getElementById('voEnergyManual').value = e.value;
+  } else {
+    // Manuel → Auto
+    const b = document.getElementById('voBrandManual');
+    const m = document.getElementById('voModelManual');
+    const e = document.getElementById('voEnergyManual');
+    if (b && b.value) {
+      document.getElementById('voBrand').value = b.value;
+      document.getElementById('voBrandBtn').querySelector('span').textContent = b.value;
+    }
+    if (m && m.value) {
+      document.getElementById('voModel').value = m.value;
+      document.getElementById('voModelBtn').querySelector('span').textContent = m.value;
+    }
+    if (e && e.value) {
+      document.getElementById('voEnergy').value = e.value;
+      document.getElementById('voEnergyBtn').querySelector('span').textContent = e.value;
+    }
+  }
+  document.getElementById('voAutoMode').style.display = manual ? 'none' : 'block';
+  document.getElementById('voManualMode').style.display = manual ? 'block' : 'none';
+  // Toggle visuel des boutons
+  const autoBtn = document.getElementById('voModeAutoBtn');
+  const manBtn = document.getElementById('voModeManualBtn');
+  if (autoBtn) {
+    autoBtn.style.background = manual ? 'transparent' : 'var(--hi-vis)';
+    autoBtn.style.color = manual ? 'var(--text-2)' : 'var(--bg-0)';
+  }
+  if (manBtn) {
+    manBtn.style.background = manual ? 'var(--hi-vis)' : 'transparent';
+    manBtn.style.color = manual ? 'var(--bg-0)' : 'var(--text-2)';
+  }
+};
+
 window.openEditVoVehicle = (id) => {
   const v = loadVoInventory().find(x => x.id === id);
   if (v) openAddVoVehicle(v);
@@ -5768,8 +6054,18 @@ window.removeVoPhoto = removeVoPhoto;
 
 function saveVoVehicle() {
   const id = document.getElementById('voId').value;
-  const brand = document.getElementById('voBrand').value.trim();
-  const model = document.getElementById('voModel').value.trim();
+  // Lire selon le mode actif
+  const isManual = !!window.__voManualMode;
+  let brand, model, energy;
+  if (isManual) {
+    brand = (document.getElementById('voBrandManual').value || '').trim();
+    model = (document.getElementById('voModelManual').value || '').trim();
+    energy = (document.getElementById('voEnergyManual').value || '').trim();
+  } else {
+    brand = (document.getElementById('voBrand').value || '').trim();
+    model = (document.getElementById('voModel').value || '').trim();
+    energy = (document.getElementById('voEnergy').value || '').trim();
+  }
   if (!brand || !model) { toast('Marque et modèle obligatoires'); return; }
   const v = {
     id,
@@ -5777,11 +6073,12 @@ function saveVoVehicle() {
     version: document.getElementById('voVersion').value.trim(),
     year: document.getElementById('voYear').value.trim(),
     km: parseInt(document.getElementById('voKm').value, 10) || 0,
-    energy: document.getElementById('voEnergy').value.trim(),
+    energy,
     plate: document.getElementById('voPlate').value.trim().toUpperCase(),
     price: parseInt(document.getElementById('voPrice').value, 10) || 0,
     notes: document.getElementById('voNotes').value.trim(),
     photos: (window.__voPhotos || []).filter(Boolean),
+    _manual: isManual,  // mémoriser le mode pour la prochaine édition
     updatedAt: Date.now(),
   };
   const list = loadVoInventory();
@@ -5790,12 +6087,399 @@ function saveVoVehicle() {
   saveVoInventory(list);
   document.getElementById('voEditOverlay').remove();
   delete window.__voPhotos;
+  delete window.__voManualMode;
   // Re-render la liste
   const overlay = document.getElementById('voInventoryOverlay');
   if (overlay) { overlay.remove(); openVoInventory(); }
   toast(`✓ ${v.brand} ${v.model} ${idx >= 0 ? 'modifié' : 'ajouté au stock'}`);
 }
 window.saveVoVehicle = saveVoVehicle;
+
+// ============================================================
+// PROPOSITION COMMERCIALE VO — Cash + Financement côte à côte
+// ============================================================
+function openVoProposal(voId) {
+  const v = loadVoInventory().find(x => x.id === voId);
+  if (!v) { toast('Véhicule introuvable'); return; }
+  const taeg = (state.settings && state.settings.taeg) || 5.9;
+  // État local (reprise, apport, durée)
+  window.__voProposal = { vehicleId: voId, reprise: 0, apport: 0, duration: 36, taeg };
+  renderVoProposal();
+}
+window.openVoProposal = openVoProposal;
+
+// Ouverture depuis la cote de reprise : on demande au commercial de choisir le VO
+// puis on ouvre directement la proposition avec la reprise pré-remplie
+function openProposalFromAppraisal(repriseAmount) {
+  const list = loadVoInventory();
+  if (list.length === 0) {
+    toast('Aucun véhicule dans le stock VO. Ajoute d\'abord des véhicules.', 4000);
+    return;
+  }
+  // Construire un overlay de sélection
+  const html = `
+    <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2200;overflow-y:auto;-webkit-overflow-scrolling:touch" id="voSelectOverlay">
+      <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
+        <button onclick="document.getElementById('voSelectOverlay').remove()" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
+        <div style="flex:1">
+          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">Choisir un VO</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">Reprise pré-remplie : ${(repriseAmount || 0).toLocaleString('fr-FR')} €</div>
+        </div>
+      </div>
+      <div style="padding:14px;background:var(--bg-0)">
+        ${list.map(v => `
+          <div onclick="window.__pickVoForProposal('${v.id}', ${repriseAmount || 0})" style="cursor:pointer;background:var(--bg-1);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;gap:12px;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--hi-vis)'" onmouseout="this.style.borderColor='var(--line)'">
+            ${v.photos && v.photos[0] ? `<img src="${v.photos[0]}" style="width:64px;height:48px;object-fit:cover;border-radius:5px;border:1px solid var(--line);flex-shrink:0">` : `<div style="width:64px;height:48px;background:var(--bg-2);border:1px dashed var(--line);border-radius:5px;display:grid;place-items:center;flex-shrink:0;font-size:20px">🚗</div>`}
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--hi-vis)">${v.brand} ${v.model}</div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km</div>
+              <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);margin-top:2px">${(v.price || 0).toLocaleString('fr-FR')} €</div>
+            </div>
+            <div style="display:flex;align-items:center;color:var(--hi-vis);font-size:18px">→</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window.openProposalFromAppraisal = openProposalFromAppraisal;
+
+window.__pickVoForProposal = function(voId, repriseAmount) {
+  document.getElementById('voSelectOverlay').remove();
+  const taeg = (state.settings && state.settings.taeg) || 5.9;
+  window.__voProposal = { vehicleId: voId, reprise: repriseAmount || 0, apport: 0, duration: 36, taeg };
+  renderVoProposal();
+};
+
+function renderVoProposal() {
+  const p = window.__voProposal;
+  if (!p) return;
+  const v = loadVoInventory().find(x => x.id === p.vehicleId);
+  if (!v) return;
+  const taeg = p.taeg;
+  const priceTtc = v.price || 0;
+  const totalDeduction = (p.reprise || 0) + (p.apport || 0);
+  const capitalFinance = Math.max(0, priceTtc - totalDeduction);
+  const monthly = calculateMonthlyPayment(capitalFinance, taeg, p.duration);
+  const creditCost = calculateCreditCost(capitalFinance, taeg, p.duration);
+  const totalFinance = monthly * p.duration + totalDeduction;
+
+  const html = `
+    <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2200;overflow-y:auto;-webkit-overflow-scrolling:touch" id="voProposalOverlay">
+      <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
+        <button onclick="document.getElementById('voProposalOverlay').remove()" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
+        <div style="flex:1">
+          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">Proposition commerciale</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${v.brand} ${v.model} ${v.year || ''}</div>
+        </div>
+      </div>
+
+      <div style="padding:18px;background:var(--bg-0)">
+        <!-- Bandeau véhicule -->
+        <div style="display:flex;gap:12px;margin-bottom:18px;padding:12px;background:var(--bg-1);border:1px solid var(--line);border-radius:8px">
+          ${v.photos && v.photos[0] ? `<img src="${v.photos[0]}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex-shrink:0">` : `<div style="width:80px;height:60px;background:var(--bg-2);border:1px dashed var(--line);border-radius:6px;display:grid;place-items:center;flex-shrink:0;font-size:24px">🚗</div>`}
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis)">${v.brand} ${v.model}</div>
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km</div>
+            <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--hi-vis);margin-top:4px">${priceTtc.toLocaleString('fr-FR')} €</div>
+          </div>
+        </div>
+
+        <!-- Paramètres ajustables -->
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">Paramètres de la proposition</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Reprise client (€)</label>
+            <input id="voPropReprise" type="number" min="0" step="100" value="${p.reprise}" oninput="window.updateVoProposal && window.updateVoProposal()" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:13px;font-weight:600">
+          </div>
+          <div>
+            <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Apport (€)</label>
+            <input id="voPropApport" type="number" min="0" step="100" value="${p.apport}" oninput="window.updateVoProposal && window.updateVoProposal()" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:13px;font-weight:600">
+          </div>
+        </div>
+
+        <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Durée du financement</label>
+        <div style="display:flex;gap:6px;margin-bottom:14px">
+          ${[12, 24, 36, 48].map(d => `<button onclick="window.setVoProposalDuration && window.setVoProposalDuration(${d})" style="flex:1;padding:10px;background:${p.duration === d ? 'var(--hi-vis)' : 'var(--bg-2)'};color:${p.duration === d ? 'var(--bg-0)' : 'var(--text-1)'};border:1px solid ${p.duration === d ? 'var(--hi-vis)' : 'var(--line)'};border-radius:5px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">${d} mois</button>`).join('')}
+        </div>
+
+        <!-- 2 propositions côte à côte -->
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">Présentation client</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+          <!-- CASH -->
+          <div style="background:var(--bg-1);border:2px solid var(--signal-green);border-radius:10px;padding:14px;display:flex;flex-direction:column;justify-content:space-between">
+            <div>
+              <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--signal-green);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">💰 CASH</div>
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:4px">Prix vente</div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${priceTtc.toLocaleString('fr-FR')} €</div>
+              ${(p.reprise > 0) ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">– Reprise</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">– ${p.reprise.toLocaleString('fr-FR')} €</div>` : ''}
+              ${(p.apport > 0) ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:4px">– Apport</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">– ${p.apport.toLocaleString('fr-FR')} €</div>` : ''}
+            </div>
+            <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:2px">Net à payer</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--signal-green);line-height:1">${capitalFinance.toLocaleString('fr-FR')} €</div>
+            </div>
+          </div>
+
+          <!-- FINANCEMENT -->
+          <div style="background:var(--bg-1);border:2px solid var(--hi-vis);border-radius:10px;padding:14px;display:flex;flex-direction:column;justify-content:space-between">
+            <div>
+              <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--hi-vis);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">📅 FINANCEMENT</div>
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:4px">Sur ${p.duration} mois</div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">TAEG ${taeg}%</div>
+              ${totalDeduction > 0 ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">Reprise + apport</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">${totalDeduction.toLocaleString('fr-FR')} €</div>` : '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">100% financé</div>'}
+            </div>
+            <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:2px">Mensualité</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--hi-vis);line-height:1">${monthly.toLocaleString('fr-FR')} €</div>
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:4px">/mois</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Détail financement -->
+        <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:6px;padding:10px;font-family:var(--font-mono);font-size:10px;color:var(--text-2);line-height:1.7;margin-bottom:14px">
+          <strong style="color:var(--hi-vis)">Détail financement :</strong><br>
+          • Capital financé : <span style="color:var(--hi-vis)">${capitalFinance.toLocaleString('fr-FR')} €</span><br>
+          • Coût du crédit : <span style="color:var(--hi-vis)">${creditCost.toLocaleString('fr-FR')} €</span><br>
+          • Total dû (mensualités) : <span style="color:var(--hi-vis)">${(monthly * p.duration).toLocaleString('fr-FR')} €</span><br>
+          • Coût total opération : <span style="color:var(--hi-vis)">${totalFinance.toLocaleString('fr-FR')} €</span>
+        </div>
+
+        <button onclick="window.generateVoProposalPdf && window.generateVoProposalPdf()" class="btn-primary" style="width:100%;margin-bottom:10px">📄 Générer PDF de proposition</button>
+        <button onclick="document.getElementById('voProposalOverlay').remove()" class="btn-ghost" style="width:100%">Fermer</button>
+      </div>
+    </div>
+  `;
+  const existing = document.getElementById('voProposalOverlay');
+  if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window.renderVoProposal = renderVoProposal;
+
+window.updateVoProposal = function() {
+  const p = window.__voProposal;
+  if (!p) return;
+  p.reprise = parseInt(document.getElementById('voPropReprise').value, 10) || 0;
+  p.apport = parseInt(document.getElementById('voPropApport').value, 10) || 0;
+  renderVoProposal();
+  // Restaurer le focus sur le dernier champ modifié
+  const lastFocused = document.activeElement;
+  if (lastFocused && lastFocused.id) {
+    setTimeout(() => {
+      const el = document.getElementById(lastFocused.id);
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }, 50);
+  }
+};
+
+window.setVoProposalDuration = function(d) {
+  if (window.__voProposal) {
+    window.__voProposal.duration = d;
+    renderVoProposal();
+  }
+};
+
+// PDF de proposition VO (cash + financement)
+window.generateVoProposalPdf = function() {
+  const p = window.__voProposal;
+  if (!p) return;
+  const v = loadVoInventory().find(x => x.id === p.vehicleId);
+  if (!v) return;
+  if (!window.jspdf) { toast('PDF non disponible'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const w = doc.internal.pageSize.getWidth();
+  const t = getActiveTenant();
+  const taeg = p.taeg;
+  const totalDed = (p.reprise || 0) + (p.apport || 0);
+  const capital = Math.max(0, (v.price || 0) - totalDed);
+  const monthly = calculateMonthlyPayment(capital, taeg, p.duration);
+
+  // En-tête
+  doc.setFillColor(242, 101, 34); // orange
+  doc.rect(0, 0, w, 22, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text(t.name.toUpperCase(), 14, 14);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Proposition commerciale véhicule occasion', 14, 19);
+
+  // Date
+  doc.setTextColor(50, 50, 50);
+  doc.setFontSize(9);
+  const dateStr = new Date().toLocaleDateString('fr-FR');
+  doc.text(`Édité le ${dateStr}`, w - 14, 19, { align: 'right' });
+
+  let y = 32;
+
+  // Bloc véhicule
+  doc.setFillColor(245, 245, 245);
+  doc.rect(14, y, w - 28, 28, 'F');
+  doc.setTextColor(30, 30, 30);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(`${v.brand} ${v.model}`, 18, y + 8);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km${v.version ? ' · ' + v.version : ''}`, 18, y + 14);
+  if (v.plate) doc.text(`Immatriculation : ${v.plate}`, 18, y + 20);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(242, 101, 34);
+  doc.setFontSize(16);
+  doc.text(`${(v.price || 0).toLocaleString('fr-FR')} €`, w - 18, y + 14, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Prix de vente TTC', w - 18, y + 19, { align: 'right' });
+
+  y += 36;
+
+  // Titre 2 propositions
+  doc.setTextColor(30, 30, 30);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('PROPOSITIONS', 14, y);
+  y += 6;
+
+  // Largeur colonnes
+  const colW = (w - 28 - 6) / 2;
+
+  // Colonne CASH
+  doc.setDrawColor(34, 197, 94);
+  doc.setLineWidth(0.5);
+  doc.rect(14, y, colW, 50);
+  doc.setFillColor(34, 197, 94);
+  doc.rect(14, y, colW, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('CASH', 14 + colW / 2, y + 5.5, { align: 'center' });
+  doc.setTextColor(50, 50, 50);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  let cashY = y + 14;
+  doc.text(`Prix vente : ${(v.price || 0).toLocaleString('fr-FR')} €`, 18, cashY);
+  cashY += 5;
+  if (p.reprise > 0) {
+    doc.setTextColor(34, 197, 94);
+    doc.text(`– Reprise : –${p.reprise.toLocaleString('fr-FR')} €`, 18, cashY);
+    cashY += 5;
+  }
+  if (p.apport > 0) {
+    doc.setTextColor(34, 197, 94);
+    doc.text(`– Apport : –${p.apport.toLocaleString('fr-FR')} €`, 18, cashY);
+    cashY += 5;
+  }
+  doc.setTextColor(50, 50, 50);
+  doc.line(18, cashY + 1, 18 + colW - 8, cashY + 1);
+  cashY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Net à payer', 18, cashY);
+  cashY += 5;
+  doc.setFontSize(16);
+  doc.setTextColor(34, 197, 94);
+  doc.text(`${capital.toLocaleString('fr-FR')} €`, 18, cashY);
+
+  // Colonne FINANCEMENT
+  const colXf = 14 + colW + 6;
+  doc.setDrawColor(242, 101, 34);
+  doc.rect(colXf, y, colW, 50);
+  doc.setFillColor(242, 101, 34);
+  doc.rect(colXf, y, colW, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('FINANCEMENT', colXf + colW / 2, y + 5.5, { align: 'center' });
+  doc.setTextColor(50, 50, 50);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  let finY = y + 14;
+  doc.text(`Durée : ${p.duration} mois`, colXf + 4, finY);
+  finY += 5;
+  doc.text(`TAEG : ${taeg}%`, colXf + 4, finY);
+  finY += 5;
+  if (totalDed > 0) {
+    doc.setTextColor(34, 197, 94);
+    doc.text(`Apport+reprise : ${totalDed.toLocaleString('fr-FR')} €`, colXf + 4, finY);
+    finY += 5;
+  } else {
+    doc.setTextColor(50, 50, 50);
+    doc.text(`100% financé`, colXf + 4, finY);
+    finY += 5;
+  }
+  doc.setTextColor(50, 50, 50);
+  doc.line(colXf + 4, finY + 1, colXf + colW - 4, finY + 1);
+  finY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Mensualité', colXf + 4, finY);
+  finY += 5;
+  doc.setFontSize(16);
+  doc.setTextColor(242, 101, 34);
+  doc.text(`${monthly.toLocaleString('fr-FR')} € / mois`, colXf + 4, finY);
+
+  y += 56;
+
+  // Détails et conditions
+  doc.setTextColor(80, 80, 80);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const detailText = `Capital financé : ${capital.toLocaleString('fr-FR')} € · Coût du crédit : ${calculateCreditCost(capital, taeg, p.duration).toLocaleString('fr-FR')} € · Total mensualités : ${(monthly * p.duration).toLocaleString('fr-FR')} €`;
+  doc.text(detailText, 14, y);
+  y += 6;
+
+  // Notes véhicule
+  if (v.notes) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Notes / Équipements', 14, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const notes = doc.splitTextToSize(v.notes, w - 28);
+    doc.text(notes, 14, y);
+    y += notes.length * 4 + 5;
+  }
+
+  // Mentions
+  doc.setTextColor(150, 150, 150);
+  doc.setFontSize(7);
+  const mentions = `Proposition non contractuelle, sous réserve d'acceptation du dossier de financement. TAEG ${taeg}% à titre indicatif, taux définitif déterminé après étude du dossier. ${t.name} - Édité avec MATCH! Scanner.`;
+  const mentionsLines = doc.splitTextToSize(mentions, w - 28);
+  doc.text(mentionsLines, 14, 280);
+
+  // Watermark invisible (couleur très claire, texte minuscule, en bas de page)
+  // Sert de preuve de propriété si le PDF est repris/contrefait
+  const fp = (window.__MATCH_LICENSE && window.__MATCH_LICENSE.fingerprint) || 'noFP';
+  const tenantId = t.id || 'noT';
+  const userId = (window.__firebase && window.__firebase.user && window.__firebase.user.uid) ? window.__firebase.user.uid.slice(0, 8) : 'anon';
+  const wmSig = `MATCH-${Date.now().toString(36)}-${fp.slice(-6)}-${tenantId.slice(0, 4)}-${userId}`;
+  doc.setTextColor(245, 245, 245); // quasi-blanc, invisible à l'écran/impression normale
+  doc.setFontSize(4);
+  doc.text(wmSig, w - 14, 292, { align: 'right' });
+
+  // Métadonnées PDF officielles (recherchables via Adobe Reader → Propriétés)
+  doc.setProperties({
+    title: `Proposition ${v.brand} ${v.model}`,
+    subject: 'Proposition commerciale véhicule occasion',
+    author: t.name,
+    creator: 'MATCH! Scanner™ — © SARL 10Positif',
+    keywords: `MATCH,Scanner,${wmSig},Proprietary,10Positif,${tenantId}`,
+  });
+
+  // Save
+  const filename = `Proposition-${v.brand}-${v.model}-${dateStr.replace(/\//g, '-')}.pdf`;
+  doc.save(filename);
+  toast('PDF généré');
+};
 
 function deleteVoVehicle(id) {
   if (!confirm('Retirer ce véhicule du stock VO ?')) return;
@@ -7366,11 +8050,18 @@ window.setupFirestoreSync = setupFirestoreSync;
 const _origOnConnected = window.onFirebaseUserConnected;
 window.onFirebaseUserConnected = function(user) {
   if (_origOnConnected) _origOnConnected(user);
+  // Forcer le refresh du branding (au cas où la callback originale est passée trop tôt)
+  if (typeof window.applyTenantBranding === 'function') {
+    window.applyTenantBranding();
+  }
   setTimeout(() => setupFirestoreSync(), 500);
 };
 
-// Si on est déjà connecté au démarrage, lancer la sync
+// Si on est déjà connecté au démarrage, lancer la sync ET rafraîchir le branding
 if (window.__firebase && window.__firebase.user) {
+  if (typeof window.applyTenantBranding === 'function') {
+    window.applyTenantBranding();
+  }
   setTimeout(() => setupFirestoreSync(), 1000);
 }
 
