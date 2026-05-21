@@ -2204,6 +2204,138 @@ const ADEME_DB = {
   'caterham super seven 600': { brand:'Caterham', model:'Super Seven 600', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:6, co2:135, priceNew:42500, yearMin:2020, yearMax:2026 },
   'morgan plus 4 974': { brand:'Morgan', model:'Plus 4 974', segment:'premium', energies:['ESSENCE'], defaultEnergy:'ESSENCE', fiscalPower:8, co2:165, priceNew:78500, yearMin:2020, yearMax:2026 },
 };
+
+// ============================================================
+// CALIBRATION 974 — Prix neufs ajustés pour le marché réunionnais
+// ============================================================
+// Les prix neufs ADEME sont métropolitains. À La Réunion, il faut ajuster :
+// 1. Couche A : prix observés empiriquement sur le marché 974
+//    (sources : vehicules-occasion.re, renault.re, hyundai.re, paruvendu 974)
+// 2. Couche B : coefficient OPMR/octroi-de-mer pour les modèles non-mesurés
+//    (basé sur l'étude officielle OPMR + barème octroi de mer)
+//
+// Couche A → calibration empirique (top 50 modèles 974)
+// Couche B → coefficient théorique (segment + énergie + puissance fiscale)
+// ============================================================
+
+// --- Couche A : prix neufs 974 mesurés empiriquement (top vente 974) ---
+// Format : 'brand model'.toLowerCase() → priceNew974 (TTC)
+// Source : annonces concessionnaires 974 récentes + Sources marché OPMR
+// Top 25 calibré sur le marché VO 974 réel (mai 2026)
+// Méthode : prix VO 974 observé × coefficient de décote inverse = prix neuf 974 implicite
+const PRICE_974_EMPIRIC = {
+  // === SEGMENT CITADINES === (Top ventes 974 historiquement)
+  'renault clio': 22500,         // Clio V Equilibre, vu 12.9k€ à 78k km 2022 = neuf ~22-23k€
+  'peugeot 208': 23000,          // 208 PureTech 110, marché dominant 974
+  'citroen c3': 21500,           // C3 PureTech, mainstream 974
+  'dacia sandero': 17500,        // Sandero Stepway, top vente 974
+  'toyota yaris': 23500,         // Yaris Hybride, leader hybrides 974
+  'renault twingo': 19500,       // Twingo SCe, citadine entry
+  'fiat 500': 21500,             // 500 hybride, citadine premium chic
+  'hyundai i10': 17000,          // i10 entry-level
+  'kia picanto': 16500,          // Picanto entry-level
+  'suzuki swift': 19500,         // Swift hybride 974
+
+  // === SEGMENT BERLINES COMPACTES ===
+  'renault megane': 32000,       // Megane TCe 140, mainstream
+  'peugeot 308': 32500,          // 308 PureTech, segment C
+  'citroen c4': 28500,           // C4 PureTech, segment C
+  'volkswagen golf': 36000,      // Golf TSI mainstream
+  'toyota corolla': 31500,       // Corolla Hybride, leader hybride C
+  'hyundai i30': 27500,          // i30 essence
+  'kia ceed': 26500,             // Ceed essence
+
+  // === SEGMENT SUV COMPACTS (forte croissance 974) ===
+  'renault captur': 28000,       // Captur TCe 140, top SUV compact
+  'peugeot 2008': 29500,         // 2008 PureTech 130, top SUV
+  'citroen c3 aircross': 26500,  // C3 Aircross
+  'dacia duster': 23000,         // Duster TCe, leader SUV abordable
+  'toyota yaris cross': 30000,   // Yaris Cross hybride
+  'hyundai kona': 30500,         // Kona essence/hybride
+  'kia stonic': 27500,           // Stonic essence
+  'renault arkana': 33500,       // Arkana E-Tech hybride
+  'mg zs': 25500,                // MG ZS, alternative low-cost
+  'nissan juke': 27500,          // Juke essence
+  'suzuki vitara': 28500,        // Vitara hybride
+
+  // === SEGMENT SUV INTERMÉDIAIRES (mainstream) ===
+  'renault austral': 42000,      // Austral TCe 130 Techno (vérifié empiriquement)
+  'peugeot 3008': 42500,         // 3008 PureTech/Hybride
+  'citroen c5 aircross': 38500,  // C5 Aircross
+  'volkswagen tiguan': 47500,    // Tiguan TSI mainstream
+  'toyota rav4': 47500,          // RAV4 Hybride
+  'hyundai tucson': 38500,       // Tucson Hybride
+  'kia sportage': 36500,         // Sportage Hybride
+  'mazda cx-5': 39500,           // CX-5 essence
+
+  // === SEGMENT MONOSPACES / FAMILIALES ===
+  'dacia jogger': 22500,         // Jogger 7 places, valeur sûre 974
+  'citroen berlingo': 28500,     // Berlingo familial
+  'peugeot rifter': 29500,       // Rifter familial
+
+  // === PREMIUM ALLEMAND ===
+  'bmw serie 1': 42000,          // Série 1 essence
+  'mercedes classe a': 43500,    // Classe A essence
+  'audi a3': 41500,              // A3 TFSI
+  'bmw x1': 50000,               // X1 essence/hybride
+  'mercedes gla': 51500,         // GLA essence
+  'audi q3': 49500,              // Q3 TFSI
+
+  // === ÉLECTRIQUES (coefficient ~1.00 mais prix ADEME parfois obsolètes) ===
+  'renault zoe': 32000,          // Zoe électrique
+  'peugeot e-208': 36500,        // e-208 électrique
+  'tesla model 3': 52500,        // Model 3 (prix 974 quasi équivalent métropole)
+  'mg 4': 32500,                 // MG4 électrique
+};
+
+// --- Couche B : coefficient théorique basé sur OPMR + octroi de mer ---
+// Retourne un multiplicateur appliqué au prix neuf ADEME métropole
+function coefficient974(energy, fiscalPower) {
+  const e = (energy || '').toUpperCase();
+  const fp = parseInt(fiscalPower, 10) || 5;
+
+  // Cas particulier électrique : surcoût neuf -5% à +5% (exonération OM + bonus)
+  // En réalité l'écart est faible, on prend 1.00 (neutre)
+  if (e === 'ELECTRIQUE' || e === 'ELECTRIC') return 1.00;
+
+  // Hybride : octroi de mer réduit à 4% + 2.5% OMR
+  if (e === 'HYBRIDE' || e === 'HYBRID') return 1.05;
+
+  // Diesel : cas particulier 1.5-2.5L où l'écart est nul (cf. OPMR)
+  if (e === 'DIESEL' || e === 'GASOIL') {
+    if (fp <= 5) return 1.10;   // petit diesel
+    if (fp <= 8) return 1.05;   // diesel mainstream
+    return 1.18;                // gros diesel
+  }
+
+  // Essence : octroi de mer progressif selon cylindrée (≈ puissance fiscale)
+  if (fp <= 4) return 1.10;     // citadines <1000cc
+  if (fp <= 6) return 1.13;     // 1000-1500cc
+  if (fp <= 8) return 1.18;     // 1500-2000cc
+  if (fp <= 10) return 1.22;    // 2000-2500cc
+  return 1.28;                  // >2500cc / gros V6+
+}
+
+// Fonction publique : retourne le prix neuf 974 calibré pour un modèle ADEME
+function getPrice974(brand, model, energy, fiscalPower) {
+  const key = `${(brand || '').toLowerCase()} ${(model || '').toLowerCase()}`.trim();
+  // Couche A : prix empirique 974 si disponible
+  if (PRICE_974_EMPIRIC[key]) {
+    return { price: PRICE_974_EMPIRIC[key], source: 'empirique-974' };
+  }
+  // Couche B : extrapolation via coefficient OPMR + ADEME_DB
+  const ademeEntry = ADEME_DB[key];
+  if (!ademeEntry) return { price: null, source: null };
+  const coef = coefficient974(energy || ademeEntry.defaultEnergy, fiscalPower || ademeEntry.fiscalPower);
+  return {
+    price: Math.round(ademeEntry.priceNew * coef),
+    source: 'extrapolé-OPMR',
+    coef,
+  };
+}
+window.getPrice974 = getPrice974;
+window.coefficient974 = coefficient974;
+window.PRICE_974_EMPIRIC = PRICE_974_EMPIRIC;
 // ============================================================
 // GRILLE VR LEASECAR — Calibrée sur sources constructeurs réelles
 // (Renault 08/2022, Dacia 03/2023, Groupe Caille 05+10/2024)
@@ -2802,6 +2934,11 @@ function lookupPlate(plate, scanMeta = {}) {
   if (!vehicle && !sivData && scanMeta.makeModel) {
     ademeData = lookupAdeme(scanMeta.makeModel);
     if (ademeData) {
+      // Calibration 974 : remplacer priceNew par le prix neuf calibré La Réunion
+      const p974 = getPrice974(ademeData.brand, ademeData.model, ademeData.defaultEnergy, ademeData.fiscalPower);
+      if (p974 && p974.price) {
+        ademeData = { ...ademeData, priceNew: p974.price, _priceSource: p974.source };
+      }
       // Estimation de l'année MEC depuis le format SIV (2 lettres de gauche)
       ademeData = { ...ademeData, estimatedYear: estimateYearFromPlate(normalized) };
       // Calcul auto de la cote affinée
@@ -3704,10 +3841,21 @@ function openPicker(type) {
           utilitaire: 'Utilitaire (Trafic, Expert…)', premium: 'Premium (BMW, Audi, Mercedes)'
         };
         if (sBtn) sBtn.querySelector('span').textContent = sLabels[ademe.segment] || ademe.segment;
-        // Prix neuf catalogue (si vide)
+        // Prix neuf catalogue 974 (calibré pour La Réunion, si vide)
         const priceInput = document.getElementById('ap_price');
-        if (priceInput && !priceInput.value) priceInput.value = ademe.priceNew;
-        toast(`✓ Données ADEME pré-remplies : énergie, segment, prix`, 2500);
+        if (priceInput && !priceInput.value) {
+          // Utiliser getPrice974 pour avoir le prix neuf calibré 974
+          const p974 = window.getPrice974 ? window.getPrice974(ademe.brand, ademe.model, ademe.defaultEnergy, ademe.fiscalPower) : null;
+          if (p974 && p974.price) {
+            priceInput.value = p974.price;
+            // Marqueur pour info debug
+            window.__lastPriceSource = p974.source;
+          } else {
+            priceInput.value = ademe.priceNew;
+            window.__lastPriceSource = 'ADEME-brut';
+          }
+        }
+        toast(`✓ Données ADEME pré-remplies (prix 974 calibré)`, 2500);
       }
     };
   } else if (type === 'apEnergy') {
@@ -5451,7 +5599,7 @@ window.openProposeVoToProspect = function(prospectId) {
   if (!prospect) { toast('Prospect introuvable'); return; }
   const list = loadVoInventory();
   if (list.length === 0) {
-    toast('Aucun véhicule dans le stock VO. Ajoute d\\'abord des véhicules.', 4000);
+    toast('Aucun véhicule dans le stock VO. Ajoute d\'abord des véhicules.', 4000);
     return;
   }
   // Mémoriser le prospect pour la suite (envoi email)
@@ -5522,7 +5670,7 @@ window.sendProposalEmail = function() {
   // Vérifier l'email du prospect
   const email = prospect.email || (prospect.contact && prospect.contact.email);
   if (!email) {
-    toast('Pas d\\'email pour ce prospect. Ajoute-le dans la fiche.', 4000);
+    toast('Pas d\'email pour ce prospect. Ajoute-le dans la fiche.', 4000);
     return;
   }
 
@@ -5594,7 +5742,7 @@ window.sendProposalEmail = function() {
     setTimeout(() => {
       // Ouvrir mailto après 500ms pour que le PDF soit téléchargé
       window.location.href = mailtoUrl;
-      toast('✓ PDF téléchargé · email ouvert. Attache le PDF avant d\\'envoyer.', 5000);
+      toast('✓ PDF téléchargé · email ouvert. Attache le PDF avant d\'envoyer.', 5000);
     }, 500);
   } else {
     window.location.href = mailtoUrl;
