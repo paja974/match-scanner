@@ -657,13 +657,21 @@
 
         <div class="section">
           <div class="section-title">Étape 1 · Identifier le véhicule</div>
-          <div class="manual-row" style="margin-bottom: 14px">
-            <input type="text" class="manual-input" id="appraisalPlate" placeholder="AB-123-CD" maxlength="9" />
-            <button class="btn-search" id="btnAppraisalLookup">REGCHECK</button>
+
+          <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Immatriculation *</label>
+          <input type="text" class="manual-input" id="appraisalPlate" placeholder="AB-123-CD" maxlength="9" style="width:100%;padding:14px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:18px;font-weight:700;letter-spacing:3px;text-align:center;text-transform:uppercase;margin-bottom:12px" />
+
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);line-height:1.5;margin-bottom:12px">
+            Saisis l'immatriculation puis choisis comment continuer :
           </div>
-          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-3); line-height: 1.5; margin-bottom: 8px">
-            Le bouton REGCHECK consomme 1 crédit sur ton compte regcheck.org.uk pour récupérer marque, modèle, énergie, date MEC.<br/>
-            Tu peux aussi saisir manuellement les champs ci-dessous.
+
+          <button class="btn-search" id="btnAppraisalLookup" style="width:100%;padding:13px;background:var(--hi-vis);border:none;color:var(--bg-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">🔍 RECHERCHER VIA REGCHECK</button>
+
+          <button id="btnAppraisalManual" type="button" style="width:100%;padding:11px;background:var(--bg-2);border:1px dashed var(--hi-vis);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:10px">✏ SAISIR MANUELLEMENT</button>
+
+          <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);line-height:1.6;padding:8px 10px;background:var(--bg-1);border:1px solid var(--line);border-radius:5px">
+            <strong style="color:var(--hi-vis)">🔍 RegCheck :</strong> récupère marque/modèle/énergie/MEC. Consomme 1 crédit.<br>
+            <strong style="color:var(--hi-vis)">✏ Manuel :</strong> tu remplis directement les champs ci-dessous. Aucune API consommée.
           </div>
         </div>
 
@@ -904,6 +912,41 @@
       <div class="field-help">
         Taux annuel utilisé pour calculer les loyers mensuels des propositions VO et reprise.
         Standard auto 2026 : 4.9% à 6.9% selon la marge souhaitée.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 18px">
+      <label class="field-label">Marge VO concession (%)</label>
+      <input type="number" min="0" max="100" step="1" class="field-input" id="settingsMarginVo" placeholder="20" autocomplete="off" />
+      <div class="field-help">
+        Marge appliquée entre la cote d'achat (cote affinée 974) et le prix de vente concession.
+        Standard : 15% (étroit) · 20% (normal) · 25% (confortable) · 30% (premium).
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 18px">
+      <label class="field-label">Tarif cheval fiscal (€/CV) La Réunion</label>
+      <input type="number" min="0" max="200" step="0.01" class="field-input" id="settingsCvRate974" placeholder="60" autocomplete="off" />
+      <div class="field-help">
+        Tarif officiel La Réunion 2026 : 60 €/CV (voté par le Conseil Régional, hausse de 57 → 60 € depuis février 2026).
+        Métropole : 54,95 €/CV. Véhicule ≥ 10 ans : demi-tarif automatiquement appliqué.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 18px">
+      <label class="field-label">Frais fixes ANTS (€)</label>
+      <input type="number" min="0" step="0.01" class="field-input" id="settingsAntsFee" placeholder="12.76" autocomplete="off" />
+      <div class="field-help">
+        Frais officiels ANTS ajoutés à la carte grise : 10 € taxe de gestion + 2,76 € acheminement = 12,76 €.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 18px">
+      <label class="field-label">Autres frais VO par défaut (€)</label>
+      <input type="number" min="0" step="10" class="field-input" id="settingsFeesVo" placeholder="100" autocomplete="off" />
+      <div class="field-help">
+        Champ libre par véhicule pour carburant, nettoyage, contrôle technique, petit entretien.
+        La carte grise est calculée séparément depuis la puissance fiscale.
       </div>
     </div>
 
@@ -2334,6 +2377,99 @@ function getPrice974(brand, model, energy, fiscalPower) {
   };
 }
 window.getPrice974 = getPrice974;
+
+// ============================================================
+// SUGGESTION PRIX DE VENTE VO (pour scan en masse + édition VO)
+// ============================================================
+// Calcule un prix de vente concession suggéré à partir de :
+// - prix neuf catalogue 974 (via getPrice974)
+// - cote affinée selon âge + km + énergie + segment + désirabilité
+// - marge concession (configurable dans Réglages)
+//
+// Retourne { suggested, coteAchat, marginPct, source }
+function suggestSalePrice(brand, model, energy, year, km) {
+  // 1. Récupérer le prix neuf 974 calibré
+  const p974 = getPrice974(brand, model, energy, null);
+  if (!p974 || !p974.price) return null;
+  const priceNew = p974.price;
+
+  // 2. Trouver l'entrée ADEME pour récupérer les paramètres techniques
+  const key = (brand + ' ' + model).toLowerCase().trim();
+  const ademeEntry = ADEME_DB[key];
+  if (!ademeEntry) {
+    // Pas d'entrée ADEME : on fait une estimation simple
+    const ageYears = Math.max(0.5, 2026 - (parseInt(year, 10) || 2020));
+    // Décote linéaire ~12% par an pour un véhicule mainstream
+    const decote = Math.min(0.85, ageYears * 0.12);
+    const coteAchat = Math.round(priceNew * (1 - decote));
+    const margin = (state.settings && state.settings.marginVo) || 20;
+    const suggested = Math.round(coteAchat * (1 + margin / 100));
+    return { suggested, coteAchat, marginPct: margin, source: 'estimation-simple' };
+  }
+
+  // 3. Cote affinée via computeAppraisal (la même que dans Reprise)
+  const ageYears = Math.max(0.5, 2026 - (parseInt(year, 10) || 2020));
+  const condition = 'bon'; // par défaut, état standard
+  try {
+    const result = computeAppraisal({
+      priceNew,
+      energy: energy || ademeEntry.defaultEnergy,
+      ageYears,
+      kmCurrent: parseInt(km, 10) || 0,
+      brand: ademeEntry.brand,
+      condition,
+      segment: ademeEntry.segment,
+      desirability: 'standard', // pas d'info désirabilité au moment du scan masse
+    });
+    const coteAchat = result.coteAffinee;
+    const margin = (state.settings && state.settings.marginVo) || 20;
+    const suggested = Math.round(coteAchat * (1 + margin / 100));
+    // Arrondir au 100€ supérieur (psychologie commerciale)
+    const suggestedRounded = Math.ceil(suggested / 100) * 100;
+    return { suggested: suggestedRounded, coteAchat, marginPct: margin, source: p974.source };
+  } catch (e) {
+    console.warn('[suggestSalePrice] computeAppraisal failed:', e);
+    return null;
+  }
+}
+window.suggestSalePrice = suggestSalePrice;
+
+// ============================================================
+// CALCUL CARTE GRISE LA RÉUNION
+// ============================================================
+// Tarif officiel : 60 €/CV en 2026 (vote Conseil Régional)
+// Demi-tarif pour véhicules ≥ 10 ans (règle nationale)
+// + frais ANTS fixes : 10 € taxe gestion + 2,76 € acheminement
+function computeCarteGrise974(fiscalPower, year) {
+  const fp = parseInt(fiscalPower, 10) || 0;
+  if (!fp || fp <= 0) return { total: 0, detail: null };
+
+  const cvRate = (state.settings && state.settings.cvRate974) || 60;
+  const antsFee = (state.settings && state.settings.antsFee) || 12.76;
+
+  // Abattement véhicule ≥ 10 ans : demi-tarif
+  const currentYear = new Date().getFullYear();
+  const vehicleAge = currentYear - (parseInt(year, 10) || currentYear);
+  const isOld = vehicleAge >= 10;
+  const effectiveRate = isOld ? cvRate / 2 : cvRate;
+
+  const taxeRegionale = Math.round(fp * effectiveRate * 100) / 100;
+  const total = Math.round((taxeRegionale + antsFee) * 100) / 100;
+
+  return {
+    total,
+    detail: {
+      fiscalPower: fp,
+      cvRate,
+      effectiveRate,
+      isOld,
+      vehicleAge,
+      taxeRegionale,
+      antsFee,
+    }
+  };
+}
+window.computeCarteGrise974 = computeCarteGrise974;
 window.coefficient974 = coefficient974;
 window.PRICE_974_EMPIRIC = PRICE_974_EMPIRIC;
 // ============================================================
@@ -2684,9 +2820,9 @@ window.calculateCreditCost = calculateCreditCost;
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, ...JSON.parse(raw) };
+    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, marginVo: 20, feesVo: 350, cvRate974: 60, antsFee: 12.76, ...JSON.parse(raw) };
   } catch (e) {}
-  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0 };
+  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, marginVo: 20, feesVo: 350, cvRate974: 60, antsFee: 12.76 };
 }
 function saveSettings() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings)); } catch (e) {}
@@ -3107,8 +3243,8 @@ function renderResult(v, scanMeta = {}) {
     <div class="section">
       <div class="section-title">Kilométrage</div>
       <div class="data-grid">
-        <div class="data-cell"><div class="data-label">Compteur</div><div class="data-value highlight">${v.currentKm.toLocaleString('fr-FR')} km</div></div>
-        <div class="data-cell"><div class="data-label">Plafond contrat</div><div class="data-value">${v.contractKm.toLocaleString('fr-FR')} km</div></div>
+        <div class="data-cell"><div class="data-label">Compteur</div><div class="data-value highlight">${v.currentKm.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km</div></div>
+        <div class="data-cell"><div class="data-label">Plafond contrat</div><div class="data-value">${v.contractKm.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km</div></div>
       </div>
       <div class="progress"><div class="progress-fill" style="width: ${usagePercent}%"></div></div>
       <div class="progress-meta">
@@ -3174,9 +3310,18 @@ const VR_ESTIMATES = {
   'Motorcycle':    { vrMin: 2000,  vrMax: 8000,  rentMin: 120, rentMax: 280 },
 };
 
-function fmtEur(n) {
-  return n.toLocaleString('fr-FR') + ' €';
+// Helper : formate un nombre en €, en utilisant un espace normal (U+0020)
+// au lieu du NARROW NO-BREAK SPACE (U+202F) qui peut être mal rendu
+// sur certains contextes Safari iOS et dans les PDF (jsPDF), apparaissant comme un slash.
+function fmtNum(n) {
+  if (n == null || isNaN(n)) return '0';
+  return Math.round(n).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ').replace(/[\u202F\u00A0]/g, ' ');
 }
+function fmtEur(n) {
+  return fmtNum(n) + ' €';
+}
+window.fmtNum = fmtNum;
+window.fmtEur = fmtEur;
 
 // ============================================================
 // renderSivProspect — Fiche prospect (véhicule HORS flotte avec données SIV)
@@ -3495,7 +3640,7 @@ function openAdemeRefine(plate) {
 
         <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Kilométrage réel (relevé tableau de bord)</label>
         <input id="ademeRefineKm" type="number" min="0" step="1000" value="${currentKm}" class="field-input" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:6px">
-        <div id="ademeRefineKmHint" style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:14px">Estimation actuelle : ${currentKm.toLocaleString('fr-FR')} km (${currentYear} · 15 000 km/an)</div>
+        <div id="ademeRefineKmHint" style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:14px">Estimation actuelle : ${currentKm.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km (${currentYear} · 15 000 km/an)</div>
 
         <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Énergie réelle</label>
         <button type="button" id="ademeRefineEnergyBtn" onclick="window.openPicker && window.openPicker('refineEnergy')"
@@ -3535,7 +3680,7 @@ function onAdemeRefineYearChange() {
     kmInput.value = kmEstimated;
   }
   if (hint) {
-    hint.innerHTML = `Estimation actuelle : ${kmEstimated.toLocaleString('fr-FR')} km (${year} · 15 000 km/an)`;
+    hint.innerHTML = `Estimation actuelle : ${kmEstimated.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km (${year} · 15 000 km/an)`;
   }
 }
 
@@ -4344,6 +4489,10 @@ function openSettings() {
   el('switchStrict').classList.toggle('on', state.settings.strict);
   el('regcheckUsername').value = state.settings.regcheckUsername || '';
   el('settingsTaeg').value = state.settings.taeg || 6.0;
+  el('settingsMarginVo').value = state.settings.marginVo != null ? state.settings.marginVo : 20;
+  el('settingsCvRate974').value = state.settings.cvRate974 != null ? state.settings.cvRate974 : 60;
+  el('settingsAntsFee').value = state.settings.antsFee != null ? state.settings.antsFee : 12.76;
+  el('settingsFeesVo').value = state.settings.feesVo != null ? state.settings.feesVo : 100;
   refreshQuotaDisplay();
   el('settingsModal').classList.add('show');
 }
@@ -4379,6 +4528,10 @@ el('btnSaveSettings').addEventListener('click', () => {
     strict: el('switchStrict').classList.contains('on'),
     regcheckUsername: el('regcheckUsername').value.trim(),
     taeg: parseFloat(el('settingsTaeg').value) || 6.0,
+    marginVo: parseFloat(el('settingsMarginVo').value) || 20,
+    cvRate974: parseFloat(el('settingsCvRate974').value) || 60,
+    antsFee: parseFloat(el('settingsAntsFee').value) || 12.76,
+    feesVo: parseFloat(el('settingsFeesVo').value) || 100,
   };
   saveSettings();
   refreshEngineUi();
@@ -4536,7 +4689,7 @@ el('btnAppraisalLookup').addEventListener('click', async () => {
     const estimatedPrice = estimatePrice(make, model);
     if (estimatedPrice && !el('ap_price').value) {
       el('ap_price').value = estimatedPrice;
-      toast(`Données récupérées · prix estimé ${estimatedPrice.toLocaleString('fr-FR')}€ (à valider)`);
+      toast(`Données récupérées · prix estimé ${estimatedPrice.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}€ (à valider)`);
     } else {
       toast('Données récupérées · saisis le prix neuf');
     }
@@ -4546,6 +4699,29 @@ el('btnAppraisalLookup').addEventListener('click', async () => {
     btn.textContent = originalText;
     btn.disabled = false;
   }
+});
+
+// Bouton "Saisir manuellement" : valide la plaque, scrolle vers Étape 2 et y met le focus
+// Pas de consommation de crédit RegCheck. Le commercial remplit les champs lui-même.
+el('btnAppraisalManual').addEventListener('click', () => {
+  const plate = el('appraisalPlate').value.trim();
+  if (!plate) {
+    toast('Saisis d\'abord l\'immatriculation', 2500);
+    el('appraisalPlate').focus();
+    return;
+  }
+  // Scroller vers l'étape 2 (marque/modèle)
+  const brandBtn = el('ap_brandBtn');
+  if (brandBtn) {
+    brandBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+      // Effet visuel : pulse orange sur le bouton marque pour indiquer où continuer
+      brandBtn.style.transition = 'box-shadow 0.3s';
+      brandBtn.style.boxShadow = '0 0 0 3px var(--hi-vis)';
+      setTimeout(() => { brandBtn.style.boxShadow = ''; }, 1200);
+    }, 400);
+  }
+  toast('✏ Mode manuel · saisis marque, modèle, énergie...', 3000);
 });
 
 // Calcul de l'évaluation
@@ -4594,7 +4770,8 @@ el('btnComputeAppraisal').addEventListener('click', () => {
   // (le calcul lui-même est instantané, mais sans délai on ne voit rien)
   setTimeout(() => {
     try {
-      doComputeAppraisal({ brand, model, energy, year, km, priceNew, condition, segment, desirability });
+      const plate = el('appraisalPlate') ? el('appraisalPlate').value.trim() : '';
+      doComputeAppraisal({ brand, model, energy, year, km, priceNew, condition, segment, desirability, plate });
       // Bouton "succès" puis restaurer
       btn.style.background = 'var(--signal-green)';
       btn.textContent = '✓ Évaluation calculée';
@@ -4621,7 +4798,7 @@ el('btnComputeAppraisal').addEventListener('click', () => {
 });
 
 // Fonction extraite : effectue réellement le calcul
-function doComputeAppraisal({ brand, model, energy, year, km, priceNew, condition, segment, desirability }) {
+function doComputeAppraisal({ brand, model, energy, year, km, priceNew, condition, segment, desirability, plate }) {
   const now = new Date();
   const ageYears = (now.getFullYear() - year) + (now.getMonth() / 12);
   const result = computeAppraisal({ priceNew, energy, ageYears, kmCurrent: km, brand, condition, segment, desirability });
@@ -4717,7 +4894,7 @@ function doComputeAppraisal({ brand, model, energy, year, km, priceNew, conditio
     result.repriseHigh = collectionHigh;
   }
 
-  renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, condition, segment, desirability, collectionInfo, ...result });
+  renderAppraisalResult({ brand, model, energy, year, km, priceNew, ageYears, condition, segment, desirability, collectionInfo, plate, ...result });
 
   // LOG : cote affinée calculée
   if (typeof window.logActivity === 'function') {
@@ -4813,7 +4990,7 @@ if (btnReset) btnReset.addEventListener('click', resetAppraisalForm);
 function renderAppraisalResult(r) {
   const energyLabel = { ESSENCE: 'Essence', DIESEL: 'Diesel', HYBRIDE: 'Hybride', ELECTRIQUE: 'Électrique' }[r.energy] || r.energy;
   const energyColor = { ESSENCE: '#e8a845', DIESEL: '#a78bfa', HYBRIDE: '#34d399', ELECTRIQUE: '#60a5fa' }[r.energy];
-  const fmt = n => n.toLocaleString('fr-FR') + ' €';
+  const fmt = n => n.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ') + ' €';
   const coefColor = v => v >= 1.03 ? 'var(--signal-green)' : v <= 0.97 ? 'var(--signal-red)' : 'var(--text-1)';
   const coefSign = v => v >= 1 ? `+${Math.round((v - 1) * 100)}%` : `${Math.round((v - 1) * 100)}%`;
 
@@ -4827,7 +5004,7 @@ function renderAppraisalResult(r) {
           <span>Cote affinée calculée</span>
         </div>
         <div class="vehicle-headline">${r.brand} ${r.model}</div>
-        <div class="vehicle-sub">${r.year} · ${r.km.toLocaleString('fr-FR')} km · ${(r.ageYears).toFixed(1)} ans</div>
+        <div class="vehicle-sub">${r.year} · ${r.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km · ${(r.ageYears).toFixed(1)} ans</div>
         <div class="status-bar">
           <div class="badge" style="color: ${energyColor}; border-color: ${energyColor}40">${energyLabel}</div>
           <div class="badge">Prix neuf ${fmt(r.priceNew)}</div>
@@ -4885,7 +5062,7 @@ function renderAppraisalResult(r) {
               else if (dev <= 0.30) status = '🟡 sur-borné léger';
               else if (dev <= 0.60) status = '🟠 sur-borné fort';
               else                  status = '🔴 très sur-borné';
-              return `Km · ${r.km.toLocaleString('fr-FR')} (attendu ~${kmExpected.toLocaleString('fr-FR')}) · ${status}`;
+              return `Km · ${r.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} (attendu ~${kmExpected.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}) · ${status}`;
             })()}</span>
             <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${coefColor(r.coefficients.km)}">${coefSign(r.coefficients.km)}</span>
           </div>
@@ -4965,9 +5142,9 @@ function renderAppraisalResult(r) {
       <div class="section" style="background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:8px;margin:14px 0;padding:14px">
         <div style="font-family:var(--font-mono);font-size:10px;color:var(--hi-vis);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;font-weight:700">💼 Proposition commerciale</div>
         <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-1);line-height:1.6;margin-bottom:10px">
-          Transforme cette cote de reprise en proposition pour ton client : choisis un véhicule du stock VO.
+          Transforme cette cote de reprise en proposition pour ton client : choisis un véhicule du stock VO.${r.plate ? `<br><span style="color:var(--hi-vis);font-weight:700">Reprise : ${r.brand} ${r.model} · ${r.plate}</span>` : ''}
         </div>
-        <button onclick="window.openProposalFromAppraisal && window.openProposalFromAppraisal(${r.repriseRecom})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 CHOISIR UN VO ET CRÉER LA PROPOSITION</button>
+        <button onclick="window.openProposalFromAppraisal && window.openProposalFromAppraisal({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}'})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 CHOISIR UN VO ET CRÉER LA PROPOSITION</button>
       </div>
 
       <div class="actions-row">
@@ -5334,7 +5511,7 @@ function openCgvSignModal() {
           ${p.company ? `<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1);margin-top:2px">${p.company}${p.role ? ' · ' + p.role : ''}</div>` : ''}
           <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-top:4px">📞 ${p.phone}</div>
           <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);margin-top:4px;padding-top:6px;border-top:1px solid var(--line)">🚗 ${p.vehicle.plate} · ${p.vehicle.brand} ${p.vehicle.model}${p.vehicle.year ? ' · ' + p.vehicle.year : ''}</div>
-          ${p.estimation ? `<div style="font-family:var(--font-mono);font-size:11px;color:var(--hi-vis);margin-top:4px;font-weight:700">💰 Cote affinée : ${(p.estimation.coteAffinee || 0).toLocaleString('fr-FR')} €</div>` : ''}
+          ${p.estimation ? `<div style="font-family:var(--font-mono);font-size:11px;color:var(--hi-vis);margin-top:4px;font-weight:700">💰 Cote affinée : ${(p.estimation.coteAffinee || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>` : ''}
         </div>
 
         <!-- CGV -->
@@ -5622,8 +5799,8 @@ window.openProposeVoToProspect = function(prospectId) {
             ${v.photos && v.photos[0] ? `<img src="${v.photos[0]}" style="width:64px;height:48px;object-fit:cover;border-radius:5px;border:1px solid var(--line);flex-shrink:0">` : `<div style="width:64px;height:48px;background:var(--bg-2);border:1px dashed var(--line);border-radius:5px;display:grid;place-items:center;flex-shrink:0;font-size:20px">🚗</div>`}
             <div style="flex:1;min-width:0">
               <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--hi-vis)">${v.brand} ${v.model}</div>
-              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km</div>
-              <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);margin-top:2px">${(v.price || 0).toLocaleString('fr-FR')} €</div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km</div>
+              <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);margin-top:2px">${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
             </div>
             <div style="display:flex;align-items:center;color:var(--hi-vis);font-size:18px">→</div>
           </div>
@@ -5638,11 +5815,25 @@ window.__pickVoForProspect = function(voId) {
   const prospect = window.__proposalProspect;
   document.getElementById('voSelectForProspectOverlay').remove();
   const taeg = (state.settings && state.settings.taeg) || 6.0;
-  // Pré-remplir la reprise si le prospect a une estimation
-  const repriseFromAppraisal = (prospect && prospect.estimation && prospect.estimation.repriseRecom) || 0;
+  // Pré-remplir avec les 3 valeurs de reprise du prospect
+  const est = (prospect && prospect.estimation) || {};
+  const repriseRecom = est.repriseRecom || 0;
+  const repriseLow = est.repriseLow || 0;
+  const repriseHigh = est.repriseHigh || 0;
+  // Récupérer aussi les infos véhicule reprise depuis le prospect (vehicle.plate, etc.)
+  const vehProspect = prospect && prospect.vehicle ? prospect.vehicle : {};
+  // Mode par défaut "recom" car on est dans une proposition AVEC achat
+  // (le commercial pourra basculer en low/high via toggle)
   window.__voProposal = {
     vehicleId: voId,
-    reprise: repriseFromAppraisal,
+    reprise: repriseRecom,
+    repriseLow,
+    repriseRecom,
+    repriseHigh,
+    repriseMode: 'recom',  // 'low' | 'recom' | 'high' | 'custom'
+    repriseVehiclePlate: vehProspect.plate || '',
+    repriseVehicleBrand: vehProspect.brand || '',
+    repriseVehicleModel: vehProspect.model || '',
     apport: 0,
     duration: 36,
     taeg,
@@ -5674,10 +5865,14 @@ window.sendProposalEmail = function() {
     return;
   }
 
-  // Calculs proposition
+  // Calculs proposition (prix + carte grise + autres frais)
   const taeg = p.taeg;
+  const carteGrise = v.carteGrise || 0;
+  const otherFees = v.fees || 0;
+  const fees = carteGrise + otherFees;
+  const priceTotal = (v.price || 0) + fees;
   const totalDed = (p.reprise || 0) + (p.apport || 0);
-  const capital = Math.max(0, (v.price || 0) - totalDed);
+  const capital = Math.max(0, priceTotal - totalDed);
   const monthly = calculateMonthlyPayment(capital, taeg, p.duration);
   const t = getActiveTenant();
   const firstName = prospect.firstName || (prospect.contact && prospect.contact.firstName) || '';
@@ -5685,15 +5880,19 @@ window.sendProposalEmail = function() {
   const greeting = firstName || lastName ? `${firstName} ${lastName}`.trim() : 'Madame, Monsieur';
 
   // Composer sujet et corps
-  const subject = `Proposition commerciale · ${v.brand} ${v.model}`;
+  const subject = `Proposition commerciale · ${v.brand} ${v.model}${v.plate ? ' (' + v.plate + ')' : ''}`;
 
   let body = `Bonjour ${greeting},\n\n`;
   body += `Suite à notre échange, voici notre proposition commerciale pour le véhicule suivant :\n\n`;
   body += `▸ ${v.brand} ${v.model}${v.version ? ' ' + v.version : ''}\n`;
+  if (v.plate) body += `▸ Immatriculation : ${v.plate}\n`;
   if (v.year) body += `▸ Année : ${v.year}\n`;
   if (v.energy) body += `▸ Énergie : ${v.energy}\n`;
-  if (v.km) body += `▸ Kilométrage : ${v.km.toLocaleString('fr-FR')} km\n`;
-  body += `▸ Prix de vente TTC : ${(v.price || 0).toLocaleString('fr-FR')} €\n\n`;
+  if (v.km) body += `▸ Kilométrage : ${v.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km\n`;
+  body += `▸ Prix de vente TTC : ${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+  if (carteGrise > 0) body += `▸ Carte grise : ${carteGrise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+  if (otherFees > 0) body += `▸ Frais de mise en route (carburant, nettoyage, CT) : ${otherFees.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+  body += `\n`;
 
   const hasDeduction = (p.reprise > 0) || (p.apport > 0);
 
@@ -5702,29 +5901,33 @@ window.sendProposalEmail = function() {
   if (hasDeduction) {
     // Cas avec reprise/apport : 2 propositions distinctes
     body += `💰 ACHAT COMPTANT\n`;
-    body += `Prix de vente : ${(v.price || 0).toLocaleString('fr-FR')} €\n`;
-    if (p.reprise > 0) body += `Reprise : -${p.reprise.toLocaleString('fr-FR')} €\n`;
-    if (p.apport > 0) body += `Apport : -${p.apport.toLocaleString('fr-FR')} €\n`;
-    body += `→ Net à payer : ${capital.toLocaleString('fr-FR')} €\n\n`;
+    body += `Prix de vente : ${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (carteGrise > 0) body += `Carte grise : ${carteGrise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (otherFees > 0) body += `Autres frais : ${otherFees.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (p.reprise > 0) body += `Reprise : -${p.reprise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (p.apport > 0) body += `Apport : -${p.apport.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    body += `→ Net à payer : ${capital.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n\n`;
 
     body += `📅 FINANCEMENT\n`;
-    body += `Apport + reprise : ${totalDed.toLocaleString('fr-FR')} €\n`;
-    body += `Capital financé : ${capital.toLocaleString('fr-FR')} €\n`;
+    body += `Apport + reprise : ${totalDed.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    body += `Capital financé : ${capital.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
     body += `\nMensualités selon durée :\n`;
     for (const d of [36, 48, 60]) {
       const m = calculateMonthlyPayment(capital, taeg, d);
-      body += `  • ${d} mois : ${m.toLocaleString('fr-FR')} € / mois\n`;
+      body += `  • ${d} mois : ${m.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € / mois\n`;
     }
     body += `\n`;
   } else {
-    // Cas sans reprise ni apport : juste le prix + financement 100%
-    body += `💰 PRIX DE VENTE : ${(v.price || 0).toLocaleString('fr-FR')} €\n\n`;
-
-    body += `📅 FINANCEMENT 100%\n`;
+    // Cas sans reprise ni apport
+    body += `💰 PRIX DE VENTE : ${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (carteGrise > 0) body += `   + Carte grise : ${carteGrise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (otherFees > 0) body += `   + Autres frais : ${otherFees.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    if (fees > 0) body += `   = Total à régler : ${priceTotal.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+    body += `\n📅 FINANCEMENT 100%\n`;
     body += `\nMensualités selon durée :\n`;
     for (const d of [36, 48, 60]) {
       const m = calculateMonthlyPayment(capital, taeg, d);
-      body += `  • ${d} mois : ${m.toLocaleString('fr-FR')} € / mois\n`;
+      body += `  • ${d} mois : ${m.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € / mois\n`;
     }
     body += `\n`;
   }
@@ -5786,9 +5989,9 @@ function renderProspectsList(list) {
       <div style="background:var(--bg-2);border:1px dashed var(--hi-vis)60;border-radius:6px;padding:10px 12px;margin-top:8px">
         <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">💰 Offre commerciale · ${p.estimation.source || 'ADEME'}</div>
         <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.7">
-          <div>Cote affinée : <strong style="color:var(--hi-vis);font-size:13px">${(p.estimation.coteAffinee || 0).toLocaleString('fr-FR')} €</strong> <span style="color:var(--text-3);font-size:10px">(${p.estimation.cotePct || 0}% du neuf)</span></div>
-          <div>Fourchette négo : <span style="color:var(--text-2)">${(p.estimation.repriseLow || 0).toLocaleString('fr-FR')} → ${(p.estimation.repriseRecom || 0).toLocaleString('fr-FR')} → ${(p.estimation.repriseHigh || 0).toLocaleString('fr-FR')} €</span></div>
-          <div>Prix neuf catalogue : <span style="color:var(--text-2)">${(p.estimation.priceNew || 0).toLocaleString('fr-FR')} €</span></div>
+          <div>Cote affinée : <strong style="color:var(--hi-vis);font-size:13px">${(p.estimation.coteAffinee || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</strong> <span style="color:var(--text-3);font-size:10px">(${p.estimation.cotePct || 0}% du neuf)</span></div>
+          <div>Fourchette négo : <span style="color:var(--text-2)">${(p.estimation.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} → ${(p.estimation.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} → ${(p.estimation.repriseHigh || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span></div>
+          <div>Prix neuf catalogue : <span style="color:var(--text-2)">${(p.estimation.priceNew || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span></div>
           ${p.estimationAt ? `<div style="font-size:9px;color:var(--text-3);margin-top:4px">Estimé le ${new Date(p.estimationAt).toLocaleDateString('fr-FR')}</div>` : ''}
         </div>
       </div>` : ''}
@@ -5902,7 +6105,7 @@ function openSendProspectMail(prospectId) {
           <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.6">
             • Identité prospect + société<br>
             • Véhicule (${p.vehicle.brand} ${p.vehicle.model})<br>
-            • Cote affinée : <strong style="color:var(--hi-vis)">${(p.estimation.coteAffinee || 0).toLocaleString('fr-FR')} €</strong><br>
+            • Cote affinée : <strong style="color:var(--hi-vis)">${(p.estimation.coteAffinee || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</strong><br>
             • Fourchette de négo<br>
             • Notes commerciales<br>
             • Signature LEASECAR VO
@@ -5966,7 +6169,7 @@ function sendProspectEmail(prospectId) {
     if (e.energy) lines.push(`Énergie         : ${e.energy}`);
     if (e.segment) lines.push(`Segment         : ${e.segment}`);
     if (e.fiscalPower) lines.push(`Puissance fisc. : ${e.fiscalPower} CV`);
-    if (e.kmEstimated) lines.push(`Km estimés      : ${e.kmEstimated.toLocaleString('fr-FR')} km`);
+    if (e.kmEstimated) lines.push(`Km estimés      : ${e.kmEstimated.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km`);
   }
   lines.push('');
 
@@ -5974,14 +6177,14 @@ function sendProspectEmail(prospectId) {
     lines.push('═══════════════════════════════════');
     lines.push('PROPOSITION DE REPRISE');
     lines.push('═══════════════════════════════════');
-    lines.push(`Prix neuf catalogue : ${(e.priceNew || 0).toLocaleString('fr-FR')} €`);
+    lines.push(`Prix neuf catalogue : ${(e.priceNew || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`);
     lines.push('');
-    lines.push(`COTE AFFINÉE        : ${(e.coteAffinee || 0).toLocaleString('fr-FR')} €  (${e.cotePct || 0}% du neuf)`);
+    lines.push(`COTE AFFINÉE        : ${(e.coteAffinee || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €  (${e.cotePct || 0}% du neuf)`);
     lines.push('');
     lines.push('Fourchette de négociation :');
-    lines.push(`  Plancher (offre min)   : ${(e.repriseLow || 0).toLocaleString('fr-FR')} €`);
-    lines.push(`  Recommandé             : ${(e.repriseRecom || 0).toLocaleString('fr-FR')} €`);
-    lines.push(`  Plafond (top du marché) : ${(e.repriseHigh || 0).toLocaleString('fr-FR')} €`);
+    lines.push(`  Plancher (offre min)   : ${(e.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`);
+    lines.push(`  Recommandé             : ${(e.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`);
+    lines.push(`  Plafond (top du marché) : ${(e.repriseHigh || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`);
     lines.push('');
     if (p.estimationAt) {
       lines.push(`Estimé le ${new Date(p.estimationAt).toLocaleDateString('fr-FR')} · Source ${e.source || 'ADEME'} + grille VR LEASECAR + coefficients Réunion`);
@@ -6163,7 +6366,7 @@ function applyProspectReestimate(prospectId) {
   // Re-render la liste avec le filtre actuel
   const searchInput = document.getElementById('prospectsSearch');
   filterProspects(searchInput ? searchInput.value : '');
-  toast(`Cote recalculée : ${newAppraisal.coteAffinee.toLocaleString('fr-FR')} €`, 3500);
+  toast(`Cote recalculée : ${newAppraisal.coteAffinee.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 3500);
 }
 window.applyProspectReestimate = applyProspectReestimate;
 
@@ -6213,53 +6416,6 @@ function saveVoInventory(list) {
 // intérêts sur le capital moyen. On retient ici la formule standard d'amortissement
 // constant qui correspond à la TEG affichée.
 // ============================================================
-function simulateLldVo({ prixVente, apport = 0, dureeMois = 36, kmParAn = 15000, tauxAnnuel = 0.055, vrFinalePct = null }) {
-  // VR finale par défaut : décote selon barème indicatif marché VO
-  // ~13% par an pour un VO standard, plancher à 25% du prix neuf à 5 ans
-  const ageFin = dureeMois / 12;
-  const vrPctDefault = Math.max(0.25, 1 - (ageFin * 0.13));
-  const vrPct = vrFinalePct !== null ? vrFinalePct : vrPctDefault;
-  const vrFinale = Math.round(prixVente * vrPct);
-
-  const capitalAFinancer = Math.max(0, prixVente - apport - vrFinale);
-  const tauxMensuel = tauxAnnuel / 12;
-  const n = dureeMois;
-
-  // Amortissement constant (annuité) du capital
-  let mensuAmortissement = 0;
-  if (capitalAFinancer > 0 && tauxMensuel > 0) {
-    mensuAmortissement = capitalAFinancer * tauxMensuel / (1 - Math.pow(1 + tauxMensuel, -n));
-  } else if (capitalAFinancer > 0) {
-    // taux 0 → amortissement linéaire pur
-    mensuAmortissement = capitalAFinancer / n;
-  }
-
-  // Intérêts mensuels sur la VR (le client paie les intérêts sur la part non amortie)
-  const interetsSurVr = vrFinale * tauxMensuel;
-
-  const loyerMensuel = Math.round(mensuAmortissement + interetsSurVr);
-  const totalLoyers = loyerMensuel * n;
-  const totalPaye = totalLoyers + apport;
-  const surcoutFinancement = totalPaye - prixVente + vrFinale;
-
-  // Calcul TEG approximatif (pour transparence)
-  const tegApprox = tauxAnnuel; // simplifié : on retourne le taux nominal
-
-  return {
-    prixVente, apport, dureeMois, kmParAn, tauxAnnuel,
-    vrFinalePct: Math.round(vrPct * 100),
-    vrFinale,
-    capitalAFinancer,
-    loyerMensuel,
-    mensuAmortissement: Math.round(mensuAmortissement),
-    interetsSurVr: Math.round(interetsSurVr),
-    totalLoyers,
-    totalPaye,
-    surcoutFinancement,
-    tegApprox,
-  };
-}
-
 // ============================================================
 // UI : Catalogue VO
 // ============================================================
@@ -6286,14 +6442,13 @@ function openVoInventory() {
               ${v.photos && v.photos[0] ? `<img src="${v.photos[0]}" style="width:90px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex-shrink:0">` : `<div style="width:90px;height:70px;background:var(--bg-2);border:1px dashed var(--line);border-radius:6px;display:grid;place-items:center;flex-shrink:0;font-size:24px">🚗</div>`}
               <div style="flex:1;min-width:0">
                 <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis)">${v.brand} ${v.model}</div>
-                <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km</div>
-                <div style="font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--hi-vis);margin-top:4px">${(v.price || 0).toLocaleString('fr-FR')} €</div>
+                <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km</div>
+                <div style="font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--hi-vis);margin-top:4px">${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
               </div>
             </div>
             ${v.notes ? `<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);font-style:italic;margin-bottom:8px">${v.notes}</div>` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button onclick="window.openMatchVoToProspect && window.openMatchVoToProspect('${v.id}')" style="flex:1;min-width:140px;padding:8px;background:var(--hi-vis);border:none;color:var(--bg-0);border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">🎯 Proposer à un prospect</button>
-              <button onclick="window.openVoProposal && window.openVoProposal('${v.id}')" style="flex:1;min-width:120px;padding:8px;background:var(--bg-2);border:1px solid var(--hi-vis);color:var(--hi-vis);border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">💼 Proposition</button>
+              <button onclick="window.openVoProposal && window.openVoProposal('${v.id}')" style="flex:1;min-width:140px;padding:8px;background:var(--hi-vis);border:none;color:var(--bg-0);border-radius:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer">💼 Proposition commerciale</button>
               <button onclick="window.openEditVoVehicle && window.openEditVoVehicle('${v.id}')" style="padding:8px 10px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-1);border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer">✏️</button>
               <button onclick="window.deleteVoVehicle && window.deleteVoVehicle('${v.id}')" style="padding:8px 10px;background:none;border:1px solid var(--line);color:var(--signal-red);border-radius:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer">✕</button>
             </div>
@@ -6361,6 +6516,15 @@ function openAddVoVehicle(existing) {
         <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Prix de vente TTC * (€)</label>
         <input id="voPrice" type="number" min="0" step="100" value="${v.price || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:16px;font-weight:700;margin-bottom:12px">
 
+        <!-- Carte grise auto basée sur CV -->
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Puissance fiscale (CV)</label>
+        <input id="voFiscalPower" type="number" min="1" max="50" value="${v.fiscalPower || ''}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:4px" oninput="window.voRefreshCarteGrise && window.voRefreshCarteGrise()">
+        <div id="voCarteGriseInfo" style="font-family:var(--font-mono);font-size:10.5px;color:var(--hi-vis);margin-bottom:12px;padding:8px 10px;background:var(--bg-1);border:1px dashed var(--line);border-radius:5px;line-height:1.5">Carte grise : — €</div>
+
+        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Autres frais (€)</label>
+        <input id="voFees" type="number" min="0" step="10" value="${v.fees != null ? v.fees : ((state.settings && state.settings.feesVo) || 100)}" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:14px;margin-bottom:4px">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:12px;line-height:1.4">Carburant, nettoyage, contrôle technique, petit entretien (la carte grise est calculée à part).</div>
+
         <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Notes / Équipements</label>
         <textarea id="voNotes" rows="3" class="field-input" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:14px;resize:vertical">${v.notes || ''}</textarea>
 
@@ -6378,8 +6542,35 @@ function openAddVoVehicle(existing) {
     </div>
   `;
   document.body.insertAdjacentHTML('beforeend', html);
+  // Init carte grise auto (pré-remplir CV depuis ADEME si modèle reconnu, calculer carte grise)
+  setTimeout(() => {
+    const fp = document.getElementById('voFiscalPower');
+    if (fp && v.brand && v.model && !fp.value) {
+      const key = (v.brand + ' ' + v.model).toLowerCase().trim();
+      const ademe = ADEME_DB[key];
+      if (ademe && ademe.fiscalPower) fp.value = ademe.fiscalPower;
+    }
+    if (window.voRefreshCarteGrise) window.voRefreshCarteGrise();
+  }, 100);
 }
 window.openAddVoVehicle = openAddVoVehicle;
+
+// Recalcule la carte grise dans le formulaire VO standard
+window.voRefreshCarteGrise = function() {
+  const fpEl = document.getElementById('voFiscalPower');
+  const yearEl = document.getElementById('voYear');
+  const infoEl = document.getElementById('voCarteGriseInfo');
+  if (!fpEl || !infoEl) return;
+  const fp = parseInt(fpEl.value, 10) || 0;
+  const year = parseInt(yearEl ? yearEl.value : '', 10);
+  const result = computeCarteGrise974(fp, year);
+  if (!result.total) {
+    infoEl.innerHTML = 'Carte grise : <span style="color:var(--text-3)">— € (saisis la puissance fiscale)</span>';
+    return;
+  }
+  const d = result.detail;
+  infoEl.innerHTML = `Carte grise : <strong>${result.total.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</strong><br><span style="color:var(--text-3);font-size:9.5px">${d.fiscalPower} CV × ${d.effectiveRate} €${d.isOld ? ' (demi-tarif ≥ 10 ans)' : ''} + ${d.antsFee} € ANTS</span>`;
+};
 
 // ============================================================
 // SCAN EN MASSE — Ajout rapide de véhicules au stock VO
@@ -6418,10 +6609,14 @@ function renderMassScanOverlay() {
         <div style="background:var(--bg-1);border:1px solid var(--hi-vis);border-radius:10px;padding:16px;margin-bottom:14px">
           <div style="font-family:var(--font-mono);font-size:10px;color:var(--hi-vis);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;font-weight:700">📷 Étape 1 · Plaque</div>
           <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1);line-height:1.6;margin-bottom:12px">
-            Saisis la plaque du véhicule, puis tape sur <strong style="color:var(--hi-vis)">RECHERCHER</strong>.<br>
-            (Photo de plaque arrive prochainement, pour l'instant saisie manuelle.)
+            Saisis la plaque OU prends une photo de la plaque (OCR Plate Recognizer).
           </div>
           <input id="massScanPlate" type="text" placeholder="AB-123-CD" autocomplete="off" autocapitalize="characters" style="width:100%;padding:14px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:18px;font-weight:700;letter-spacing:3px;text-align:center;text-transform:uppercase;margin-bottom:10px">
+
+          <!-- Bouton photo plaque (input camera invisible) -->
+          <input type="file" id="massScanPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="window.massScanPhotoCapture && window.massScanPhotoCapture(event)">
+          <button onclick="document.getElementById('massScanPhotoInput').click()" id="massScanPhotoBtn" style="width:100%;padding:11px;background:var(--bg-2);border:1px dashed var(--hi-vis);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:10px">📷 PHOTO DE LA PLAQUE</button>
+
           <button onclick="window.massScanLookup && window.massScanLookup()" id="massScanLookupBtn" style="width:100%;padding:13px;background:var(--hi-vis);border:none;color:var(--bg-0);border-radius:6px;font-family:var(--font-mono);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🔍 RECHERCHER</button>
         </div>
 
@@ -6430,7 +6625,7 @@ function renderMassScanOverlay() {
             <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Ajoutés à cette session</div>
             ${sess.added.slice(-5).reverse().map(v => `
               <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-1);padding:4px 0;border-bottom:1px solid var(--line)">
-                <span style="color:var(--hi-vis)">${v.plate}</span> · ${v.brand} ${v.model} · ${v.km.toLocaleString('fr-FR')} km · ${v.price.toLocaleString('fr-FR')} €
+                <span style="color:var(--hi-vis)">${v.plate}</span> · ${v.brand} ${v.model} · ${v.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km · ${v.price.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €
               </div>
             `).join('')}
             ${sess.added.length > 5 ? `<div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);margin-top:6px">... et ${sess.added.length - 5} autres</div>` : ''}
@@ -6467,6 +6662,85 @@ window.closeMassScan = function() {
   // Re-rendre le stock VO pour afficher les ajouts
   const voOverlay = document.getElementById('voInventoryOverlay');
   if (voOverlay) { voOverlay.remove(); openVoInventory(); }
+};
+
+// Capture une photo de la plaque, envoie à Plate Recognizer, pré-remplit le champ plaque
+window.massScanPhotoCapture = async function(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const photoBtn = document.getElementById('massScanPhotoBtn');
+  const lookupBtn = document.getElementById('massScanLookupBtn');
+
+  // Vérifier que Plate Recognizer est configuré (sinon pas d'OCR auto)
+  if (!state.settings.token) {
+    toast('Configure ton token Plate Recognizer dans ⚙ Réglages pour l\'OCR auto', 4000);
+    // Reset l'input pour permettre nouvelle sélection
+    event.target.value = '';
+    return;
+  }
+
+  photoBtn.disabled = true;
+  photoBtn.textContent = '⏳ OCR Plate Recognizer...';
+  if (lookupBtn) lookupBtn.disabled = true;
+
+  try {
+    // Appel direct à Plate Recognizer (la fonction existante utilise des éléments UI
+    // qu'on n'a pas ici, donc on fait un appel direct simplifié)
+    const fd = new FormData();
+    fd.append('upload', file, 'plate.jpg');
+    if (state.settings.region) fd.append('regions', state.settings.region);
+
+    const resp = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
+      method: 'POST',
+      headers: { 'Authorization': `Token ${state.settings.token}` },
+      body: fd,
+    });
+
+    if (resp.status === 401 || resp.status === 403) throw new Error('Token API invalide');
+    if (resp.status === 429) throw new Error('Quota API dépassé');
+    if (!resp.ok) throw new Error('Erreur API ' + resp.status);
+
+    const data = await resp.json();
+    // Mise à jour du quota visible (header)
+    if (data.usage) {
+      state.quota = { used: data.usage.calls, max: data.usage.max_calls };
+      if (typeof refreshQuotaPill === 'function') refreshQuotaPill();
+    }
+
+    if (!data.results || data.results.length === 0) {
+      throw new Error('Aucune plaque détectée');
+    }
+
+    const best = data.results.reduce((a, b) => (a.score >= b.score ? a : b));
+    const detectedPlate = (typeof normalizePlate === 'function' ? normalizePlate(best.plate) : '') || best.plate.toUpperCase();
+    const confidence = Math.round(best.score * 100);
+
+    // Pré-remplir le champ plaque
+    const plateInput = document.getElementById('massScanPlate');
+    if (plateInput) plateInput.value = detectedPlate;
+
+    toast(`✓ Plaque détectée : ${detectedPlate} (${confidence}%)`, 2500);
+
+    photoBtn.disabled = false;
+    photoBtn.textContent = '📷 PHOTO DE LA PLAQUE';
+    if (lookupBtn) lookupBtn.disabled = false;
+
+    // Si confidence > 80%, on enchaîne automatiquement avec le lookup RegCheck
+    if (confidence >= 80) {
+      setTimeout(() => window.massScanLookup && window.massScanLookup(), 600);
+    } else {
+      toast('Confiance faible · vérifie la plaque puis tape RECHERCHER', 3500);
+    }
+  } catch (e) {
+    photoBtn.disabled = false;
+    photoBtn.textContent = '📷 PHOTO DE LA PLAQUE';
+    if (lookupBtn) lookupBtn.disabled = false;
+    toast('OCR échoué : ' + e.message + '. Saisis la plaque manuellement.', 4500);
+  } finally {
+    // Reset l'input pour pouvoir reprendre une photo
+    event.target.value = '';
+  }
 };
 
 window.massScanLookup = async function() {
@@ -6552,7 +6826,7 @@ function openMassScanConfirmModal({ plate, brand, model, energy, year, complete 
           <input id="massScanEnergy" type="text" value="${energy}" placeholder="ESSENCE / DIESEL / HYBRIDE / ELECTRIQUE" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:13px;margin-bottom:10px;box-sizing:border-box">
         `}
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
           <div>
             <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px">Km *</label>
             <input id="massScanKm" type="number" min="0" placeholder="80000" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:14px;font-weight:700;box-sizing:border-box">
@@ -6562,6 +6836,30 @@ function openMassScanConfirmModal({ plate, brand, model, energy, year, complete 
             <input id="massScanPrice" type="number" min="0" step="100" placeholder="18900" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:14px;font-weight:700;box-sizing:border-box">
           </div>
         </div>
+
+        <!-- Bouton suggestion de prix calculé sur base ADEME 974 -->
+        <button type="button" onclick="window.massScanSuggestPrice && window.massScanSuggestPrice()" id="massScanSuggestBtn" style="width:100%;padding:9px;background:var(--bg-2);border:1px dashed var(--hi-vis);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;cursor:pointer;letter-spacing:0.3px;margin-bottom:8px">💡 SUGGÉRER PRIX (cote 974 + marge ${(state.settings && state.settings.marginVo) || 20}%)</button>
+        <div id="massScanSuggestInfo" style="display:none;background:var(--bg-1);border:1px solid var(--signal-green);border-radius:5px;padding:8px 10px;margin-bottom:10px;font-family:var(--font-mono);font-size:10px;color:var(--text-1);line-height:1.5"></div>
+
+        <!-- Carte grise auto (calcul CV × tarif + ANTS) -->
+        <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:5px;padding:10px 12px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div style="flex:1">
+              <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Puissance fiscale (CV)</div>
+              <input id="massScanFiscalPower" type="number" min="1" max="50" placeholder="5" style="width:100%;padding:8px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:13px;box-sizing:border-box" oninput="window.massScanRefreshCarteGrise && window.massScanRefreshCarteGrise()">
+            </div>
+            <div style="flex:1.2;text-align:right">
+              <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Carte grise auto</div>
+              <div id="massScanCarteGrise" style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--hi-vis);padding:8px 0">— €</div>
+            </div>
+          </div>
+          <div id="massScanCarteGriseDetail" style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px;line-height:1.4"></div>
+        </div>
+
+        <!-- Autres frais (carburant, nettoyage, CT, etc.) -->
+        <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px">Autres frais (€)</label>
+        <input id="massScanFees" type="number" min="0" step="10" value="${(state.settings && state.settings.feesVo) || 100}" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:13px;margin-bottom:4px;box-sizing:border-box">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:14px;line-height:1.4">Carburant, nettoyage, contrôle technique, mise en route (la carte grise est calculée à part).</div>
 
         <input type="hidden" id="massScanPlateHidden" value="${plate}">
         <input type="hidden" id="massScanBrandHidden" value="${brand}">
@@ -6576,12 +6874,138 @@ function openMassScanConfirmModal({ plate, brand, model, energy, year, complete 
     </div>
   `;
   document.body.insertAdjacentHTML('beforeend', html);
-  // Focus sur Km
+  // Pré-remplir CV depuis ADEME_DB si on a la marque + modèle
   setTimeout(() => {
     const km = document.getElementById('massScanKm');
+    const fp = document.getElementById('massScanFiscalPower');
+    if (fp && brand && model) {
+      const key = (brand + ' ' + model).toLowerCase().trim();
+      const ademe = ADEME_DB[key];
+      if (ademe && ademe.fiscalPower) {
+        fp.value = ademe.fiscalPower;
+        window.massScanRefreshCarteGrise();
+      }
+    }
     if (km) km.focus();
   }, 150);
 }
+
+// Recalcule la carte grise quand l'utilisateur modifie la puissance fiscale
+window.massScanRefreshCarteGrise = function() {
+  const fp = parseInt(document.getElementById('massScanFiscalPower').value, 10) || 0;
+  const year = parseInt(document.getElementById('massScanYearHidden').value || (document.getElementById('massScanYear') && document.getElementById('massScanYear').value) || '', 10);
+  const result = computeCarteGrise974(fp, year);
+  const cgEl = document.getElementById('massScanCarteGrise');
+  const detailEl = document.getElementById('massScanCarteGriseDetail');
+  if (!result.total) {
+    if (cgEl) cgEl.textContent = '— €';
+    if (detailEl) detailEl.textContent = '';
+    return;
+  }
+  if (cgEl) cgEl.textContent = result.total.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ') + ' €';
+  if (detailEl) {
+    const d = result.detail;
+    detailEl.innerHTML = `${d.fiscalPower} CV × ${d.effectiveRate} €${d.isOld ? ' <span style="color:var(--signal-green)">(demi-tarif ≥ 10 ans)</span>' : ''} = ${d.taxeRegionale.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € + ${d.antsFee} € ANTS`;
+  }
+};
+
+// Suggère un prix de vente VO via cote ADEME 974 + marge concession
+// Le prix saisi manuellement par le vendeur PRÉVAUT toujours.
+// La suggestion est affichée uniquement à titre indicatif.
+window.massScanSuggestPrice = function() {
+  // Récupérer les valeurs actuelles de la modal
+  const brand = document.getElementById('massScanBrandHidden').value || (document.getElementById('massScanBrand') ? document.getElementById('massScanBrand').value : '');
+  const model = document.getElementById('massScanModelHidden').value || (document.getElementById('massScanModel') ? document.getElementById('massScanModel').value : '');
+  const energy = document.getElementById('massScanEnergyHidden').value || (document.getElementById('massScanEnergy') ? document.getElementById('massScanEnergy').value : '');
+  const year = document.getElementById('massScanYearHidden').value || (document.getElementById('massScanYear') ? document.getElementById('massScanYear').value : '');
+  const km = parseInt(document.getElementById('massScanKm').value, 10);
+
+  const infoBox = document.getElementById('massScanSuggestInfo');
+  const priceInput = document.getElementById('massScanPrice');
+
+  if (!brand || !model) {
+    if (infoBox) {
+      infoBox.style.display = 'block';
+      infoBox.style.borderColor = 'var(--signal-red)';
+      infoBox.style.color = 'var(--signal-red)';
+      infoBox.textContent = 'Marque et modèle requis pour suggérer un prix.';
+    }
+    return;
+  }
+  if (!km || km <= 0) {
+    if (infoBox) {
+      infoBox.style.display = 'block';
+      infoBox.style.borderColor = 'var(--signal-red)';
+      infoBox.style.color = 'var(--signal-red)';
+      infoBox.textContent = 'Saisis le kilométrage avant de demander une suggestion.';
+    }
+    return;
+  }
+  if (!year) {
+    if (infoBox) {
+      infoBox.style.display = 'block';
+      infoBox.style.borderColor = 'var(--signal-red)';
+      infoBox.style.color = 'var(--signal-red)';
+      infoBox.textContent = 'Année manquante. Saisis-la pour avoir une suggestion fiable.';
+    }
+    return;
+  }
+
+  const suggestion = window.suggestSalePrice ? window.suggestSalePrice(brand, model, energy, year, km) : null;
+  if (!suggestion) {
+    if (infoBox) {
+      infoBox.style.display = 'block';
+      infoBox.style.borderColor = '#f59e0b';
+      infoBox.style.color = '#f59e0b';
+      infoBox.textContent = `Modèle "${brand} ${model}" pas dans la base ADEME. Saisis le prix manuellement.`;
+    }
+    return;
+  }
+
+  // La règle : le prix du vendeur PRÉVAUT
+  // Si le champ Prix est déjà rempli, on n'écrase PAS. On affiche la suggestion comme info.
+  const currentPrice = parseInt(priceInput.value, 10);
+  const isManuallyFilled = currentPrice > 0;
+
+  if (!isManuallyFilled) {
+    // Champ vide → on remplit avec la suggestion (l'utilisateur peut toujours modifier)
+    priceInput.value = suggestion.suggested;
+  }
+
+  // Afficher le détail informatif dans tous les cas
+  if (infoBox) {
+    infoBox.style.display = 'block';
+    infoBox.style.borderColor = 'var(--signal-green)';
+    infoBox.style.color = 'var(--text-1)';
+    if (isManuallyFilled) {
+      // Prix vendeur déjà saisi → suggestion uniquement informative
+      const delta = currentPrice - suggestion.suggested;
+      const deltaPct = Math.round((delta / suggestion.suggested) * 100);
+      const deltaSign = delta >= 0 ? '+' : '';
+      const deltaColor = Math.abs(deltaPct) <= 10 ? 'var(--signal-green)' : (Math.abs(deltaPct) <= 25 ? '#f59e0b' : 'var(--signal-red)');
+      infoBox.innerHTML = `
+        <strong style="color:var(--hi-vis)">💡 Suggestion indicative :</strong> ${suggestion.suggested.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €<br>
+        <span style="color:var(--text-2)">Cote d'achat 974 : ${suggestion.coteAchat.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € · Marge +${suggestion.marginPct}%</span><br>
+        <span style="color:${deltaColor}">Ton prix : ${currentPrice.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € (${deltaSign}${delta.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € soit ${deltaSign}${deltaPct}%)</span>
+      `;
+    } else {
+      // Champ était vide, on a rempli
+      infoBox.innerHTML = `
+        <strong style="color:var(--signal-green)">✓ Suggestion appliquée :</strong> ${suggestion.suggested.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €<br>
+        <span style="color:var(--text-2)">Cote d'achat 974 : ${suggestion.coteAchat.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € · Marge +${suggestion.marginPct}%</span><br>
+        <span style="color:var(--text-3);font-size:9px">Tu peux ajuster ce prix · Le prix saisi prévaudra.</span>
+      `;
+    }
+  }
+
+  if (typeof toast === 'function') {
+    if (isManuallyFilled) {
+      toast(`💡 Suggestion : ${suggestion.suggested.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € (ton prix conservé)`, 2500);
+    } else {
+      toast(`💡 Prix suggéré : ${suggestion.suggested.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € · ajustable`, 2000);
+    }
+  }
+};
 
 window.massScanConfirm = function() {
   const plate = document.getElementById('massScanPlateHidden').value;
@@ -6605,6 +7029,11 @@ window.massScanConfirm = function() {
   }
   const km = parseInt(document.getElementById('massScanKm').value, 10);
   const price = parseInt(document.getElementById('massScanPrice').value, 10);
+  const fees = parseInt(document.getElementById('massScanFees').value, 10) || 0;
+  const fiscalPower = parseInt(document.getElementById('massScanFiscalPower').value, 10) || 0;
+  // Calcul carte grise auto basé sur CV + année
+  const cgResult = computeCarteGrise974(fiscalPower, year);
+  const carteGrise = cgResult.total || 0;
   if (!km || km < 0) { toast('Km obligatoire'); return; }
   if (!price || price < 100) { toast('Prix de vente obligatoire'); return; }
 
@@ -6614,6 +7043,9 @@ window.massScanConfirm = function() {
     brand, model, year, energy,
     plate,
     km, price,
+    fiscalPower,            // puissance fiscale (CV)
+    carteGrise,             // carte grise calculée auto
+    fees,                   // autres frais (carburant, nettoyage, CT)
     version: '',
     notes: '',
     photos: [],
@@ -6680,15 +7112,22 @@ function saveVoVehicle() {
   const model = (document.getElementById('voModel').value || '').trim();
   const energy = (document.getElementById('voEnergy').value || '').trim();
   if (!brand || !model) { toast('Marque et modèle obligatoires'); return; }
+  const fiscalPower = parseInt(document.getElementById('voFiscalPower').value, 10) || 0;
+  const year = document.getElementById('voYear').value.trim();
+  const cgResult = computeCarteGrise974(fiscalPower, year);
+  const carteGrise = cgResult.total || 0;
   const v = {
     id,
     brand, model,
     version: document.getElementById('voVersion').value.trim(),
-    year: document.getElementById('voYear').value.trim(),
+    year,
     km: parseInt(document.getElementById('voKm').value, 10) || 0,
     energy,
     plate: document.getElementById('voPlate').value.trim().toUpperCase(),
     price: parseInt(document.getElementById('voPrice').value, 10) || 0,
+    fiscalPower,
+    carteGrise,
+    fees: parseInt(document.getElementById('voFees').value, 10) || 0,
     notes: document.getElementById('voNotes').value.trim(),
     photos: (window.__voPhotos || []).filter(Boolean),
     updatedAt: Date.now(),
@@ -6720,31 +7159,41 @@ function openVoProposal(voId) {
 window.openVoProposal = openVoProposal;
 
 // Ouverture depuis la cote de reprise : on demande au commercial de choisir le VO
-// puis on ouvre directement la proposition avec la reprise pré-remplie
-function openProposalFromAppraisal(repriseAmount) {
+// puis on ouvre directement la proposition avec la reprise pré-remplie.
+// repriseData : soit un nombre (legacy), soit un objet { recom, low, high, plate?, brand?, model? }
+function openProposalFromAppraisal(repriseData) {
   const list = loadVoInventory();
   if (list.length === 0) {
     toast('Aucun véhicule dans le stock VO. Ajoute d\'abord des véhicules.', 4000);
     return;
   }
+  // Normaliser : si on reçoit un nombre, on construit un objet avec recom = ce nombre
+  const r = (typeof repriseData === 'number')
+    ? { recom: repriseData, low: Math.round(repriseData * 0.90 / 100) * 100, high: Math.round(repriseData * 1.05 / 100) * 100 }
+    : repriseData || { recom: 0, low: 0, high: 0 };
+  // Mémoriser pour le pick (incluant les infos véhicule reprise)
+  window.__pendingReprise = r;
   // Construire un overlay de sélection
+  const labelReprise = r.brand || r.model || r.plate
+    ? `${r.brand || ''} ${r.model || ''}${r.plate ? ' · ' + r.plate : ''}`.trim() + ' · '
+    : '';
   const html = `
     <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2200;overflow-y:auto;-webkit-overflow-scrolling:touch" id="voSelectOverlay">
       <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
-        <button onclick="document.getElementById('voSelectOverlay').remove()" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
+        <button onclick="document.getElementById('voSelectOverlay').remove();delete window.__pendingReprise" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
         <div style="flex:1">
           <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">Choisir un VO</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">Reprise pré-remplie : ${(repriseAmount || 0).toLocaleString('fr-FR')} €</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">Reprise ${labelReprise}: ${(r.recom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
         </div>
       </div>
       <div style="padding:14px;background:var(--bg-0)">
         ${list.map(v => `
-          <div onclick="window.__pickVoForProposal('${v.id}', ${repriseAmount || 0})" style="cursor:pointer;background:var(--bg-1);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;gap:12px;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--hi-vis)'" onmouseout="this.style.borderColor='var(--line)'">
+          <div onclick="window.__pickVoForProposal('${v.id}')" style="cursor:pointer;background:var(--bg-1);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;gap:12px;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--hi-vis)'" onmouseout="this.style.borderColor='var(--line)'">
             ${v.photos && v.photos[0] ? `<img src="${v.photos[0]}" style="width:64px;height:48px;object-fit:cover;border-radius:5px;border:1px solid var(--line);flex-shrink:0">` : `<div style="width:64px;height:48px;background:var(--bg-2);border:1px dashed var(--line);border-radius:5px;display:grid;place-items:center;flex-shrink:0;font-size:20px">🚗</div>`}
             <div style="flex:1;min-width:0">
               <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--hi-vis)">${v.brand} ${v.model}</div>
-              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km</div>
-              <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);margin-top:2px">${(v.price || 0).toLocaleString('fr-FR')} €</div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km</div>
+              <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);margin-top:2px">${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
             </div>
             <div style="display:flex;align-items:center;color:var(--hi-vis);font-size:18px">→</div>
           </div>
@@ -6756,10 +7205,28 @@ function openProposalFromAppraisal(repriseAmount) {
 }
 window.openProposalFromAppraisal = openProposalFromAppraisal;
 
-window.__pickVoForProposal = function(voId, repriseAmount) {
+window.__pickVoForProposal = function(voId) {
   document.getElementById('voSelectOverlay').remove();
   const taeg = (state.settings && state.settings.taeg) || 6.0;
-  window.__voProposal = { vehicleId: voId, reprise: repriseAmount || 0, apport: 0, duration: 36, taeg };
+  // Récupérer la reprise pré-mémorisée
+  const r = window.__pendingReprise || { recom: 0, low: 0, high: 0 };
+  delete window.__pendingReprise;
+  // Mode par défaut "recom" car proposition AVEC achat (le commercial peut basculer ensuite)
+  window.__voProposal = {
+    vehicleId: voId,
+    reprise: r.recom || 0,
+    repriseLow: r.low || 0,
+    repriseRecom: r.recom || 0,
+    repriseHigh: r.high || 0,
+    repriseMode: 'recom',
+    // Infos véhicule repris (à afficher dans la proposition)
+    repriseVehiclePlate: r.plate || '',
+    repriseVehicleBrand: r.brand || '',
+    repriseVehicleModel: r.model || '',
+    apport: 0,
+    duration: 36,
+    taeg,
+  };
   renderVoProposal();
 };
 
@@ -6770,8 +7237,13 @@ function renderVoProposal() {
   if (!v) return;
   const taeg = p.taeg;
   const priceTtc = v.price || 0;
+  const carteGrise = v.carteGrise || 0;
+  const otherFees = v.fees || 0;
+  const fees = carteGrise + otherFees;  // total frais affichés au client
+  // Total client : prix de vente + carte grise + autres frais
+  const priceTotal = priceTtc + fees;
   const totalDeduction = (p.reprise || 0) + (p.apport || 0);
-  const capitalFinance = Math.max(0, priceTtc - totalDeduction);
+  const capitalFinance = Math.max(0, priceTotal - totalDeduction);
   const monthly = calculateMonthlyPayment(capitalFinance, taeg, p.duration);
   const creditCost = calculateCreditCost(capitalFinance, taeg, p.duration);
   const totalFinance = monthly * p.duration + totalDeduction;
@@ -6782,7 +7254,7 @@ function renderVoProposal() {
         <button onclick="document.getElementById('voProposalOverlay').remove()" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
         <div style="flex:1">
           <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">Proposition commerciale</div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${v.brand} ${v.model} ${v.year || ''}</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${v.brand} ${v.model} ${v.year || ''}${v.plate ? ' · ' + v.plate : ''}</div>
         </div>
       </div>
 
@@ -6792,18 +7264,37 @@ function renderVoProposal() {
           ${v.photos && v.photos[0] ? `<img src="${v.photos[0]}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex-shrink:0">` : `<div style="width:80px;height:60px;background:var(--bg-2);border:1px dashed var(--line);border-radius:6px;display:grid;place-items:center;flex-shrink:0;font-size:24px">🚗</div>`}
           <div style="flex:1;min-width:0">
             <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis)">${v.brand} ${v.model}</div>
-            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2)">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km</div>
-            <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--hi-vis);margin-top:4px">${priceTtc.toLocaleString('fr-FR')} €</div>
+            ${v.plate ? `<div style="display:inline-block;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--hi-vis);background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:4px;padding:2px 8px;margin-top:3px;letter-spacing:1.5px">${v.plate}</div>` : ''}
+            <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);margin-top:4px">${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km</div>
+            <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--hi-vis);margin-top:4px">${priceTtc.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
           </div>
         </div>
 
         <!-- Paramètres ajustables -->
         <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">Paramètres de la proposition</div>
 
+        ${(p.repriseVehiclePlate || p.repriseVehicleBrand) ? `
+          <div style="background:var(--bg-1);border:1px solid var(--signal-green);border-radius:6px;padding:10px 12px;margin-bottom:12px">
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--signal-green);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;font-weight:700">↩ Véhicule en reprise</div>
+            <div style="font-family:var(--font-mono);font-size:12px;color:var(--text-1)">
+              ${p.repriseVehicleBrand || ''} ${p.repriseVehicleModel || ''}
+              ${p.repriseVehiclePlate ? `<span style="display:inline-block;font-weight:700;color:var(--signal-green);background:var(--bg-2);border:1px solid var(--signal-green);border-radius:3px;padding:1px 6px;margin-left:6px;letter-spacing:1.5px">${p.repriseVehiclePlate}</span>` : ''}
+            </div>
+          </div>
+        ` : ''}
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
           <div>
             <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Reprise client (€)</label>
             <input id="voPropReprise" type="number" min="0" step="100" value="${p.reprise}" oninput="window.updateVoProposal && window.updateVoProposal()" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:13px;font-weight:600">
+            ${(p.repriseLow > 0 || p.repriseRecom > 0 || p.repriseHigh > 0) ? `
+              <div style="display:flex;gap:4px;margin-top:6px">
+                <button onclick="window.setReprisePreset && window.setReprisePreset('low')" style="flex:1;padding:6px 4px;background:${p.repriseMode === 'low' ? 'var(--signal-red)' : 'var(--bg-2)'};color:${p.repriseMode === 'low' ? '#fff' : 'var(--signal-red)'};border:1px solid var(--signal-red);border-radius:4px;font-family:var(--font-mono);font-size:9px;font-weight:700;cursor:pointer;letter-spacing:0.3px" title="Hypothèse basse (-10%) · pour reprise seule sans rachat">LOW<br>${(p.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}</button>
+                <button onclick="window.setReprisePreset && window.setReprisePreset('recom')" style="flex:1;padding:6px 4px;background:${p.repriseMode === 'recom' ? 'var(--hi-vis)' : 'var(--bg-2)'};color:${p.repriseMode === 'recom' ? 'var(--bg-0)' : 'var(--hi-vis)'};border:1px solid var(--hi-vis);border-radius:4px;font-family:var(--font-mono);font-size:9px;font-weight:700;cursor:pointer;letter-spacing:0.3px" title="Cote affinée · valeur de référence">RECOM<br>${(p.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}</button>
+                <button onclick="window.setReprisePreset && window.setReprisePreset('high')" style="flex:1;padding:6px 4px;background:${p.repriseMode === 'high' ? 'var(--signal-green)' : 'var(--bg-2)'};color:${p.repriseMode === 'high' ? '#fff' : 'var(--signal-green)'};border:1px solid var(--signal-green);border-radius:4px;font-family:var(--font-mono);font-size:9px;font-weight:700;cursor:pointer;letter-spacing:0.3px" title="Hypothèse haute (+5%) · geste commercial pour conclure">HIGH<br>${(p.repriseHigh || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}</button>
+              </div>
+              <div style="font-family:var(--font-mono);font-size:8.5px;color:var(--text-3);margin-top:4px;line-height:1.4">${p.repriseMode === 'low' ? '↓ Reprise seule (sans rachat)' : p.repriseMode === 'high' ? '↑ Geste commercial' : p.repriseMode === 'recom' ? '→ Cote affinée standard' : '✏ Valeur saisie manuellement'}</div>
+            ` : ''}
           </div>
           <div>
             <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Apport (€)</label>
@@ -6824,16 +7315,16 @@ function renderVoProposal() {
           <div style="background:var(--bg-1);border:2px solid var(--signal-green);border-radius:10px;padding:14px;display:flex;flex-direction:column;justify-content:space-between">
             <div>
               <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--signal-green);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">💰 ${totalDeduction > 0 ? 'CASH' : 'PRIX DE VENTE'}</div>
-              ${totalDeduction > 0 ? `
-                <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:4px">Prix vente</div>
-                <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${priceTtc.toLocaleString('fr-FR')} €</div>
-                ${(p.reprise > 0) ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">– Reprise</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">– ${p.reprise.toLocaleString('fr-FR')} €</div>` : ''}
-                ${(p.apport > 0) ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:4px">– Apport</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">– ${p.apport.toLocaleString('fr-FR')} €</div>` : ''}
-              ` : '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">Au comptant</div>'}
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:4px">Prix vente</div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">${priceTtc.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
+              ${carteGrise > 0 ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">+ Carte grise</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">+ ${carteGrise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>` : ''}
+              ${otherFees > 0 ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">+ Autres frais</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2)">+ ${otherFees.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>` : ''}
+              ${(p.reprise > 0) ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">– Reprise</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">– ${p.reprise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>` : ''}
+              ${(p.apport > 0) ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:4px">– Apport</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">– ${p.apport.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>` : ''}
             </div>
             <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
-              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:2px">${totalDeduction > 0 ? 'Net à payer' : 'À régler'}</div>
-              <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--signal-green);line-height:1">${capitalFinance.toLocaleString('fr-FR')} €</div>
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:2px">${totalDeduction > 0 ? 'Net à payer' : 'Total à régler'}</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--signal-green);line-height:1">${capitalFinance.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
             </div>
           </div>
 
@@ -6842,12 +7333,12 @@ function renderVoProposal() {
             <div>
               <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--hi-vis);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">📅 FINANCEMENT</div>
               <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:4px">Sur ${p.duration} mois</div>
-              ${totalDeduction > 0 ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">Reprise + apport</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">${totalDeduction.toLocaleString('fr-FR')} €</div>` : '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">100% financé</div>'}
+              ${totalDeduction > 0 ? `<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">Reprise + apport</div><div style="font-family:var(--font-mono);font-size:11px;color:var(--signal-green)">${totalDeduction.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>` : '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:6px">100% financé</div>'}
             </div>
             <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
               <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-bottom:2px">Mensualité</div>
-              <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--hi-vis);line-height:1">${monthly.toLocaleString('fr-FR')} €</div>
-              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:4px">/mois</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:900;color:var(--hi-vis);line-height:1">${monthly.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
+              <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:4px">par mois</div>
             </div>
           </div>
         </div>
@@ -6855,10 +7346,10 @@ function renderVoProposal() {
         <!-- Détail financement -->
         <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:6px;padding:10px;font-family:var(--font-mono);font-size:10px;color:var(--text-2);line-height:1.7;margin-bottom:14px">
           <strong style="color:var(--hi-vis)">Détail financement :</strong><br>
-          • Capital financé : <span style="color:var(--hi-vis)">${capitalFinance.toLocaleString('fr-FR')} €</span><br>
-          • Coût du crédit : <span style="color:var(--hi-vis)">${creditCost.toLocaleString('fr-FR')} €</span><br>
-          • Total dû (mensualités) : <span style="color:var(--hi-vis)">${(monthly * p.duration).toLocaleString('fr-FR')} €</span><br>
-          • Coût total opération : <span style="color:var(--hi-vis)">${totalFinance.toLocaleString('fr-FR')} €</span>
+          • Capital financé : <span style="color:var(--hi-vis)">${capitalFinance.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span><br>
+          • Coût du crédit : <span style="color:var(--hi-vis)">${creditCost.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span><br>
+          • Total dû (mensualités) : <span style="color:var(--hi-vis)">${(monthly * p.duration).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span><br>
+          • Coût total opération : <span style="color:var(--hi-vis)">${totalFinance.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span>
         </div>
 
         <button onclick="window.generateVoProposalPdf && window.generateVoProposalPdf()" class="btn-primary" style="width:100%;margin-bottom:8px">📄 Générer PDF de proposition</button>
@@ -6876,7 +7367,15 @@ window.renderVoProposal = renderVoProposal;
 window.updateVoProposal = function() {
   const p = window.__voProposal;
   if (!p) return;
-  p.reprise = parseInt(document.getElementById('voPropReprise').value, 10) || 0;
+  const newReprise = parseInt(document.getElementById('voPropReprise').value, 10) || 0;
+  // Si la valeur saisie ne correspond plus à un des presets, on passe en mode 'custom'
+  if (p.repriseLow > 0 || p.repriseRecom > 0 || p.repriseHigh > 0) {
+    if (newReprise === p.repriseLow) p.repriseMode = 'low';
+    else if (newReprise === p.repriseRecom) p.repriseMode = 'recom';
+    else if (newReprise === p.repriseHigh) p.repriseMode = 'high';
+    else p.repriseMode = 'custom';
+  }
+  p.reprise = newReprise;
   p.apport = parseInt(document.getElementById('voPropApport').value, 10) || 0;
   renderVoProposal();
   // Restaurer le focus sur le dernier champ modifié
@@ -6887,6 +7386,19 @@ window.updateVoProposal = function() {
       if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
     }, 50);
   }
+};
+
+// Bascule la valeur de reprise via les presets low/recom/high
+window.setReprisePreset = function(mode) {
+  const p = window.__voProposal;
+  if (!p) return;
+  let value = 0;
+  if (mode === 'low') value = p.repriseLow || 0;
+  else if (mode === 'recom') value = p.repriseRecom || 0;
+  else if (mode === 'high') value = p.repriseHigh || 0;
+  p.reprise = value;
+  p.repriseMode = mode;
+  renderVoProposal();
 };
 
 window.setVoProposalDuration = function(d) {
@@ -6908,8 +7420,12 @@ window.generateVoProposalPdf = function() {
   const w = doc.internal.pageSize.getWidth();
   const t = getActiveTenant();
   const taeg = p.taeg;
+  const carteGrise = v.carteGrise || 0;
+  const otherFees = v.fees || 0;
+  const fees = carteGrise + otherFees;
+  const priceTotal = (v.price || 0) + fees;
   const totalDed = (p.reprise || 0) + (p.apport || 0);
-  const capital = Math.max(0, (v.price || 0) - totalDed);
+  const capital = Math.max(0, priceTotal - totalDed);
   const monthly = calculateMonthlyPayment(capital, taeg, p.duration);
 
   // En-tête
@@ -6940,12 +7456,12 @@ window.generateVoProposalPdf = function() {
   doc.text(`${v.brand} ${v.model}`, 18, y + 8);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  doc.text(`${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km${v.version ? ' · ' + v.version : ''}`, 18, y + 14);
+  doc.text(`${v.year || ''} · ${v.energy || ''} · ${(v.km || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km${v.version ? ' · ' + v.version : ''}`, 18, y + 14);
   if (v.plate) doc.text(`Immatriculation : ${v.plate}`, 18, y + 20);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(242, 101, 34);
   doc.setFontSize(16);
-  doc.text(`${(v.price || 0).toLocaleString('fr-FR')} €`, w - 18, y + 14, { align: 'right' });
+  doc.text(`${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, w - 18, y + 14, { align: 'right' });
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
   doc.text('Prix de vente TTC', w - 18, y + 19, { align: 'right' });
@@ -6977,22 +7493,27 @@ window.generateVoProposalPdf = function() {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   let cashY = y + 14;
-  if (hasDed) {
-    doc.text(`Prix vente : ${(v.price || 0).toLocaleString('fr-FR')} €`, 18, cashY);
+  doc.text(`Prix vente : ${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 18, cashY);
+  cashY += 5;
+  if (carteGrise > 0) {
+    doc.text(`+ Carte grise : ${carteGrise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 18, cashY);
     cashY += 5;
+  }
+  if (otherFees > 0) {
+    doc.text(`+ Autres frais : ${otherFees.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 18, cashY);
+    cashY += 5;
+  }
+  if (hasDed) {
     if (p.reprise > 0) {
       doc.setTextColor(34, 197, 94);
-      doc.text(`– Reprise : –${p.reprise.toLocaleString('fr-FR')} €`, 18, cashY);
+      doc.text(`– Reprise : –${p.reprise.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 18, cashY);
       cashY += 5;
     }
     if (p.apport > 0) {
       doc.setTextColor(34, 197, 94);
-      doc.text(`– Apport : –${p.apport.toLocaleString('fr-FR')} €`, 18, cashY);
+      doc.text(`– Apport : –${p.apport.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 18, cashY);
       cashY += 5;
     }
-  } else {
-    doc.text(`Au comptant`, 18, cashY);
-    cashY += 5;
   }
   doc.setTextColor(50, 50, 50);
   doc.line(18, cashY + 1, 18 + colW - 8, cashY + 1);
@@ -7004,7 +7525,7 @@ window.generateVoProposalPdf = function() {
   cashY += 5;
   doc.setFontSize(16);
   doc.setTextColor(34, 197, 94);
-  doc.text(`${capital.toLocaleString('fr-FR')} €`, 18, cashY);
+  doc.text(`${capital.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, 18, cashY);
 
   // Colonne FINANCEMENT
   const colXf = 14 + colW + 6;
@@ -7024,7 +7545,7 @@ window.generateVoProposalPdf = function() {
   finY += 5;
   if (totalDed > 0) {
     doc.setTextColor(34, 197, 94);
-    doc.text(`Apport+reprise : ${totalDed.toLocaleString('fr-FR')} €`, colXf + 4, finY);
+    doc.text(`Apport+reprise : ${totalDed.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, colXf + 4, finY);
     finY += 5;
   } else {
     doc.setTextColor(50, 50, 50);
@@ -7041,7 +7562,7 @@ window.generateVoProposalPdf = function() {
   finY += 5;
   doc.setFontSize(16);
   doc.setTextColor(242, 101, 34);
-  doc.text(`${monthly.toLocaleString('fr-FR')} € / mois`, colXf + 4, finY);
+  doc.text(`${monthly.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € / mois`, colXf + 4, finY);
 
   y += 56;
 
@@ -7049,7 +7570,7 @@ window.generateVoProposalPdf = function() {
   doc.setTextColor(80, 80, 80);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  const detailText = `Capital financé : ${capital.toLocaleString('fr-FR')} € · Coût du crédit : ${calculateCreditCost(capital, taeg, p.duration).toLocaleString('fr-FR')} € · Total mensualités : ${(monthly * p.duration).toLocaleString('fr-FR')} €`;
+  const detailText = `Capital financé : ${capital.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € · Coût du crédit : ${calculateCreditCost(capital, taeg, p.duration).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} € · Total mensualités : ${(monthly * p.duration).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`;
   doc.text(detailText, 14, y);
   y += 6;
 
@@ -7110,446 +7631,6 @@ window.deleteVoVehicle = deleteVoVehicle;
 // ============================================================
 // MATCH PROSPECT ↔ VO : Proposition vente + reprise + loyer LLD
 // ============================================================
-function openMatchVoToProspect(voId) {
-  const vo = loadVoInventory().find(v => v.id === voId);
-  if (!vo) return;
-  const prospects = loadProspects();
-  if (prospects.length === 0) {
-    toast('Aucun prospect enregistré. Crée d\'abord une fiche.', 4500);
-    return;
-  }
-
-  const html = `
-    <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2100;overflow-y:auto;-webkit-overflow-scrolling:touch" id="matchVoOverlay">
-      <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
-        <button onclick="document.getElementById('matchVoOverlay').remove()" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
-        <div style="font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px;flex:1">Proposer ${vo.brand} ${vo.model}</div>
-      </div>
-
-      <div style="padding:18px;background:var(--bg-0)">
-        <div style="background:var(--bg-1);border:1px solid var(--hi-vis)40;border-radius:8px;padding:12px;margin-bottom:14px">
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Véhicule à vendre</div>
-          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis)">${vo.brand} ${vo.model} ${vo.version || ''}</div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">${vo.year} · ${vo.energy || ''} · ${(vo.km || 0).toLocaleString('fr-FR')} km</div>
-          <div style="font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--hi-vis);margin-top:6px">${(vo.price || 0).toLocaleString('fr-FR')} €</div>
-        </div>
-
-        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Choisir le prospect acheteur</label>
-        <select id="matchProspectSelect" onchange="window.refreshMatchSimulation && window.refreshMatchSimulation()" class="field-select" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:14px">
-          <option value="">— Sélectionner un prospect —</option>
-          ${prospects.map(p => `<option value="${p.id}">${p.lastName} ${p.firstName || ''} · ${p.vehicle.plate}${p.estimation ? ' (cote ' + (p.estimation.coteAffinee || 0).toLocaleString('fr-FR') + '€)' : ''}</option>`).join('')}
-        </select>
-
-        <input type="hidden" id="matchVoId" value="${vo.id}">
-
-        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1.5px;text-transform:uppercase;margin:18px 0 10px">Paramètres LLD VO</div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>
-            <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Durée (mois)</label>
-            <input id="matchDuree" type="number" value="36" min="12" max="60" step="6" oninput="window.refreshMatchSimulation && window.refreshMatchSimulation()" class="field-input" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:12px">
-          </div>
-          <div>
-            <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Km/an</label>
-            <input id="matchKmAn" type="number" value="15000" min="5000" max="40000" step="5000" oninput="window.refreshMatchSimulation && window.refreshMatchSimulation()" class="field-input" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:12px">
-          </div>
-        </div>
-
-        <label style="display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Apport (€)</label>
-        <input id="matchApport" type="number" value="0" min="0" step="500" oninput="window.refreshMatchSimulation && window.refreshMatchSimulation()" class="field-input" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:13px;margin-bottom:14px">
-
-        <div id="matchSimulation"></div>
-
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn-primary" style="flex:1.5" onclick="window.openSendOfferMail && window.openSendOfferMail()">📧 Envoyer par mail</button>
-          <button class="btn-primary" style="flex:1;background:var(--bg-3);color:var(--hi-vis);border:1px solid var(--hi-vis)" onclick="window.generateOfferPdf && window.generateOfferPdf()">📄 PDF</button>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.insertAdjacentHTML('beforeend', html);
-  refreshMatchSimulation();
-}
-window.openMatchVoToProspect = openMatchVoToProspect;
-
-function refreshMatchSimulation() {
-  const voId = document.getElementById('matchVoId').value;
-  const vo = loadVoInventory().find(v => v.id === voId);
-  if (!vo) return;
-  const prospectId = document.getElementById('matchProspectSelect').value;
-  const prospect = prospectId ? loadProspects().find(p => p.id === prospectId) : null;
-  const duree = parseInt(document.getElementById('matchDuree').value, 10) || 36;
-  const kmAn = parseInt(document.getElementById('matchKmAn').value, 10) || 15000;
-  const apport = parseInt(document.getElementById('matchApport').value, 10) || 0;
-
-  const reprise = prospect && prospect.estimation ? (prospect.estimation.repriseRecom || prospect.estimation.coteAffinee || 0) : 0;
-  // Apport effectif = cash + valeur reprise prospect
-  const apportEffectif = apport + reprise;
-
-  const sim = simulateLldVo({
-    prixVente: vo.price,
-    apport: apportEffectif,
-    dureeMois: duree,
-    kmParAn: kmAn,
-    tauxAnnuel: 0.055, // 5.5% taux LLD VO indicatif Réunion
-  });
-
-  const html = `
-    <div style="background:var(--bg-1);border:1px solid var(--hi-vis)60;border-radius:8px;padding:14px;margin-top:8px">
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">📊 Proposition LLD VO</div>
-
-      ${prospect ? `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)">
-        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">
-          <div style="color:var(--text-3);font-size:9px;letter-spacing:1px;text-transform:uppercase">Prospect</div>
-          <div style="color:var(--hi-vis);font-weight:700">${prospect.firstName || ''} ${prospect.lastName}</div>
-        </div>
-        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1)">
-          <div style="color:var(--text-3);font-size:9px;letter-spacing:1px;text-transform:uppercase">Véhicule à reprendre</div>
-          <div>${prospect.vehicle.brand} ${prospect.vehicle.model}</div>
-          <div style="color:var(--hi-vis);font-weight:700">${reprise.toLocaleString('fr-FR')} €</div>
-        </div>
-      </div>` : ''}
-
-      <table style="width:100%;font-family:var(--font-mono);font-size:12px;color:var(--text-1);border-collapse:collapse">
-        <tr><td style="padding:4px 0;color:var(--text-2)">Prix vente VO</td><td style="text-align:right;color:var(--hi-vis);font-weight:700">${sim.prixVente.toLocaleString('fr-FR')} €</td></tr>
-        <tr><td style="padding:4px 0;color:var(--text-2)">Apport cash</td><td style="text-align:right">${apport.toLocaleString('fr-FR')} €</td></tr>
-        ${reprise > 0 ? `<tr><td style="padding:4px 0;color:var(--text-2)">+ Reprise véhicule</td><td style="text-align:right;color:var(--signal-green)">${reprise.toLocaleString('fr-FR')} €</td></tr>` : ''}
-        <tr><td style="padding:4px 0;color:var(--text-2)">Apport total</td><td style="text-align:right;font-weight:700">${apportEffectif.toLocaleString('fr-FR')} €</td></tr>
-        <tr><td style="padding:4px 0;color:var(--text-2)">VR finale (${sim.vrFinalePct}%)</td><td style="text-align:right">${sim.vrFinale.toLocaleString('fr-FR')} €</td></tr>
-        <tr><td style="padding:4px 0;color:var(--text-2)">Capital à financer</td><td style="text-align:right">${sim.capitalAFinancer.toLocaleString('fr-FR')} €</td></tr>
-        <tr style="border-top:2px solid var(--hi-vis)"><td style="padding:8px 0;color:var(--hi-vis);font-weight:700;font-size:13px">LOYER MENSUEL</td><td style="text-align:right;color:var(--hi-vis);font-weight:700;font-size:18px">${sim.loyerMensuel.toLocaleString('fr-FR')} €</td></tr>
-      </table>
-      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);margin-top:8px;line-height:1.5">
-        Sur ${duree} mois · ${kmAn.toLocaleString('fr-FR')} km/an · Taux indicatif 5,5% · Sous réserve d'acceptation du dossier financement<br>
-        Total à payer (loyers + apport) : ${sim.totalPaye.toLocaleString('fr-FR')} €
-      </div>
-    </div>
-  `;
-  document.getElementById('matchSimulation').innerHTML = html;
-  // Stocker la simulation pour l'envoi mail
-  window.__matchSim = { vo, prospect, sim, apport, kmAn, duree, reprise };
-}
-window.refreshMatchSimulation = refreshMatchSimulation;
-
-function openSendOfferMail() {
-  const m = window.__matchSim;
-  if (!m || !m.prospect) { toast('Choisis d\'abord un prospect'); return; }
-
-  const recipient = prompt(`Email du destinataire (collaborateur ${getActiveTenant().name}):`, m.prospect.email || '');
-  if (!recipient || !recipient.includes('@')) { toast('Email invalide'); return; }
-
-  const t = getActiveTenant();
-  const lines = [];
-  lines.push('Bonjour,');
-  lines.push('');
-  lines.push(`Voici la proposition commerciale combinée vente VO + reprise + LLD pour ${m.prospect.firstName || ''} ${m.prospect.lastName}.`);
-  lines.push('');
-  lines.push('═══════════════════════════════════');
-  lines.push('CLIENT');
-  lines.push('═══════════════════════════════════');
-  lines.push(`${m.prospect.firstName || ''} ${m.prospect.lastName}`);
-  if (m.prospect.company) lines.push(m.prospect.company + (m.prospect.role ? ' · ' + m.prospect.role : ''));
-  if (m.prospect.phone) lines.push('Tél : ' + m.prospect.phone);
-  if (m.prospect.email) lines.push('Email : ' + m.prospect.email);
-  lines.push('');
-  lines.push('═══════════════════════════════════');
-  lines.push('VÉHICULE PROPOSÉ');
-  lines.push('═══════════════════════════════════');
-  lines.push(`${m.vo.brand} ${m.vo.model} ${m.vo.version || ''}`);
-  lines.push(`${m.vo.year} · ${m.vo.energy || ''} · ${(m.vo.km || 0).toLocaleString('fr-FR')} km`);
-  lines.push(`Prix de vente TTC : ${m.vo.price.toLocaleString('fr-FR')} €`);
-  if (m.vo.notes) lines.push('Équipements : ' + m.vo.notes);
-  lines.push('');
-  if (m.reprise > 0) {
-    lines.push('═══════════════════════════════════');
-    lines.push('VÉHICULE REPRIS');
-    lines.push('═══════════════════════════════════');
-    lines.push(`${m.prospect.vehicle.brand} ${m.prospect.vehicle.model} · ${m.prospect.vehicle.plate}`);
-    if (m.prospect.vehicle.year) lines.push('Année : ' + m.prospect.vehicle.year);
-    lines.push(`Valeur reprise : ${m.reprise.toLocaleString('fr-FR')} €`);
-    lines.push('');
-  }
-  lines.push('═══════════════════════════════════');
-  lines.push('FINANCEMENT LLD');
-  lines.push('═══════════════════════════════════');
-  lines.push(`Durée           : ${m.duree} mois`);
-  lines.push(`Kilométrage     : ${m.kmAn.toLocaleString('fr-FR')} km/an`);
-  lines.push(`Apport cash     : ${m.apport.toLocaleString('fr-FR')} €`);
-  if (m.reprise > 0) lines.push(`+ Reprise       : ${m.reprise.toLocaleString('fr-FR')} €`);
-  lines.push(`Apport total    : ${(m.apport + m.reprise).toLocaleString('fr-FR')} €`);
-  lines.push(`VR finale (${m.sim.vrFinalePct}%) : ${m.sim.vrFinale.toLocaleString('fr-FR')} €`);
-  lines.push('');
-  lines.push(`>>> LOYER MENSUEL : ${m.sim.loyerMensuel.toLocaleString('fr-FR')} € <<<`);
-  lines.push('');
-  lines.push(`Total payé sur la durée : ${m.sim.totalPaye.toLocaleString('fr-FR')} €`);
-  lines.push('');
-  lines.push('───────────────────────────────────');
-  lines.push('Proposition commerciale indicative · Taux 5,5% · Sous réserve d\'acceptation dossier financement et inspection physique du véhicule à reprendre.');
-  lines.push('');
-  lines.push(t.name);
-  if (t.email) lines.push(t.email);
-  if (t.phone) lines.push(t.phone);
-  lines.push(`Édité depuis MATCH! Scanner · ${new Date().toLocaleDateString('fr-FR')}`);
-
-  const subject = `[${t.name}] Proposition vente + reprise · ${m.vo.brand} ${m.vo.model}`;
-  const mailto = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
-  window.location.href = mailto;
-  toast('Proposition prête — vérifie et envoie depuis ton app Mail', 4500);
-}
-window.openSendOfferMail = openSendOfferMail;
-
-// ============================================================
-// PDF D'OFFRE COMMERCIALE — Document A4 professionnel
-// Utilise jsPDF (chargé en CDN cdnjs.cloudflare.com)
-// Structure : en-tête concessionnaire / client / véhicule proposé /
-// véhicule repris / financement LLD / mentions légales
-// ============================================================
-function generateOfferPdf() {
-  if (typeof window.jspdf === 'undefined') {
-    toast('PDF indisponible (lib non chargée)', 4000);
-    return;
-  }
-  const m = window.__matchSim;
-  if (!m || !m.prospect) {
-    toast('Choisis d\'abord un prospect dans le simulateur'); return;
-  }
-  const t = getActiveTenant();
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-
-  const ORANGE = [242, 101, 34]; // #F26522
-  const DARK = [10, 11, 13];
-  const GREY = [120, 125, 134];
-  const LINE = [220, 222, 226];
-
-  let y = 20;
-  const left = 18;
-  const right = 192;
-  const width = right - left;
-
-  // ===== EN-TÊTE =====
-  doc.setFillColor(...ORANGE);
-  doc.rect(0, 0, 210, 8, 'F');
-
-  // Logo M!
-  doc.setFillColor(...ORANGE);
-  doc.roundedRect(left, 14, 16, 16, 2, 2, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('M!', left + 8, 24, { align: 'center' });
-
-  // Titre concessionnaire
-  doc.setTextColor(...DARK);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text(t.name, left + 22, 22);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(...GREY);
-  if (t.fullName) doc.text(t.fullName, left + 22, 28);
-
-  // Type de document à droite
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(...ORANGE);
-  doc.text('PROPOSITION COMMERCIALE', right, 22, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...GREY);
-  doc.text(`Réf. ${'OFR-' + Date.now().toString(36).toUpperCase()}`, right, 27, { align: 'right' });
-  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`, right, 31, { align: 'right' });
-
-  // Ligne séparatrice
-  doc.setDrawColor(...LINE);
-  doc.setLineWidth(0.3);
-  doc.line(left, 38, right, 38);
-  y = 46;
-
-  // ===== CLIENT =====
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...ORANGE);
-  doc.text('CLIENT', left, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(...DARK);
-  const clientName = `${m.prospect.firstName || ''} ${m.prospect.lastName}`.trim();
-  doc.setFont('helvetica', 'bold');
-  doc.text(clientName, left, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  if (m.prospect.company) {
-    doc.text(m.prospect.company + (m.prospect.role ? ' · ' + m.prospect.role : ''), left, y);
-    y += 4.5;
-  }
-  if (m.prospect.phone) { doc.text(`Tél : ${m.prospect.phone}`, left, y); y += 4.5; }
-  if (m.prospect.email) { doc.text(`Email : ${m.prospect.email}`, left, y); y += 4.5; }
-  if (m.prospect.siren) { doc.text(`SIREN : ${m.prospect.siren}`, left, y); y += 4.5; }
-  y += 4;
-
-  // ===== VÉHICULE PROPOSÉ =====
-  doc.setFillColor(248, 248, 250);
-  doc.rect(left, y, width, 36, 'F');
-  doc.setDrawColor(...ORANGE);
-  doc.setLineWidth(0.5);
-  doc.line(left, y, left, y + 36);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...ORANGE);
-  doc.text('VÉHICULE PROPOSÉ', left + 4, y + 6);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(...DARK);
-  doc.text(`${m.vo.brand} ${m.vo.model}${m.vo.version ? ' ' + m.vo.version : ''}`, left + 4, y + 13);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(...GREY);
-  const carDetails = [m.vo.year, m.vo.energy, (m.vo.km || 0).toLocaleString('fr-FR') + ' km'].filter(Boolean).join(' · ');
-  doc.text(carDetails, left + 4, y + 19);
-  if (m.vo.notes) {
-    const notesWrapped = doc.splitTextToSize(m.vo.notes, width - 60);
-    doc.setFontSize(8);
-    doc.text(notesWrapped.slice(0, 2), left + 4, y + 24);
-  }
-  // Prix de vente à droite
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.setTextColor(...ORANGE);
-  doc.text(`${m.vo.price.toLocaleString('fr-FR')} €`, right - 4, y + 16, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...GREY);
-  doc.text('TTC', right - 4, y + 21, { align: 'right' });
-
-  // Photo si dispo
-  if (m.vo.photos && m.vo.photos[0]) {
-    try {
-      doc.addImage(m.vo.photos[0], 'JPEG', right - 50, y + 24, 46, 10);
-    } catch (e) {}
-  }
-  y += 42;
-
-  // ===== VÉHICULE REPRIS =====
-  if (m.reprise > 0) {
-    doc.setFillColor(245, 251, 246);
-    doc.rect(left, y, width, 28, 'F');
-    doc.setDrawColor(52, 211, 153);
-    doc.line(left, y, left, y + 28);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(20, 130, 90);
-    doc.text('VÉHICULE REPRIS', left + 4, y + 6);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(...DARK);
-    doc.text(`${m.prospect.vehicle.brand} ${m.prospect.vehicle.model}`, left + 4, y + 13);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(...GREY);
-    const reprDetails = [`Plaque ${m.prospect.vehicle.plate}`, m.prospect.vehicle.year ? `Année ${m.prospect.vehicle.year}` : null].filter(Boolean).join(' · ');
-    doc.text(reprDetails, left + 4, y + 19);
-    if (m.prospect.estimation) {
-      doc.setFontSize(8);
-      doc.text(`Cote affinée ${(m.prospect.estimation.coteAffinee || 0).toLocaleString('fr-FR')} € · Source ${m.prospect.estimation.source || 'ADEME'}`, left + 4, y + 24);
-    }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(20, 130, 90);
-    doc.text(`+ ${m.reprise.toLocaleString('fr-FR')} €`, right - 4, y + 16, { align: 'right' });
-    y += 34;
-  }
-
-  // ===== FINANCEMENT LLD =====
-  doc.setDrawColor(...ORANGE);
-  doc.setLineWidth(0.8);
-  doc.rect(left, y, width, 56);
-  doc.setFillColor(...ORANGE);
-  doc.rect(left, y, width, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('FINANCEMENT LLD VO', left + 4, y + 5.5);
-  doc.setTextColor(...DARK);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  let lineY = y + 14;
-  const labelX = left + 4, valueX = right - 4;
-
-  const ddRows = [
-    ['Durée du contrat', `${m.duree} mois`],
-    ['Kilométrage annuel', `${m.kmAn.toLocaleString('fr-FR')} km/an`],
-    ['Apport cash', `${m.apport.toLocaleString('fr-FR')} €`],
-  ];
-  if (m.reprise > 0) ddRows.push(['Valeur reprise', `${m.reprise.toLocaleString('fr-FR')} €`]);
-  ddRows.push(
-    ['Apport total', `${(m.apport + m.reprise).toLocaleString('fr-FR')} €`],
-    [`Valeur résiduelle (${m.sim.vrFinalePct}%)`, `${m.sim.vrFinale.toLocaleString('fr-FR')} €`],
-    ['Capital à financer', `${m.sim.capitalAFinancer.toLocaleString('fr-FR')} €`]
-  );
-  doc.setFontSize(8.5);
-  for (const [k, v] of ddRows) {
-    doc.setTextColor(...GREY);
-    doc.text(k, labelX, lineY);
-    doc.setTextColor(...DARK);
-    doc.text(v, valueX, lineY, { align: 'right' });
-    lineY += 4.2;
-  }
-
-  // LOYER MENSUEL en gros à droite
-  doc.setFillColor(...ORANGE);
-  doc.rect(right - 60, y + 14, 56, 36, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('LOYER MENSUEL', right - 32, y + 20, { align: 'center' });
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.text(`${m.sim.loyerMensuel.toLocaleString('fr-FR')} €`, right - 32, y + 33, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.text(`sur ${m.duree} mois`, right - 32, y + 39, { align: 'center' });
-  y += 62;
-
-  // ===== TOTAL =====
-  doc.setFontSize(9);
-  doc.setTextColor(...GREY);
-  doc.text(`Total payé sur la durée (loyers + apport) : ${m.sim.totalPaye.toLocaleString('fr-FR')} €`, left, y);
-  y += 8;
-
-  // ===== MENTIONS LÉGALES =====
-  doc.setDrawColor(...LINE);
-  doc.line(left, y, right, y);
-  y += 5;
-  doc.setFontSize(7.5);
-  doc.setTextColor(...GREY);
-  const mentions = [
-    'Proposition commerciale indicative valable 30 jours, établie sur la base des informations fournies par le client. Sous réserve d\'acceptation du dossier de financement et de l\'inspection physique du véhicule à reprendre. Le taux nominal annuel utilisé pour le calcul du loyer est de 5,5%.',
-    `Contact : ${t.name}${t.email ? ' · ' + t.email : ''}${t.phone ? ' · ' + t.phone : ''}`,
-    'Conformément au RGPD, le client a donné son consentement explicite à la collecte et au traitement de ses données personnelles. Conservation maximum 24 mois. Droit d\'accès, rectification et suppression sur simple demande.',
-  ];
-  for (const txt of mentions) {
-    const wrapped = doc.splitTextToSize(txt, width);
-    doc.text(wrapped, left, y);
-    y += wrapped.length * 3 + 2;
-  }
-
-  // ===== PIED DE PAGE =====
-  doc.setFontSize(7);
-  doc.setTextColor(...ORANGE);
-  doc.text('Édité avec MATCH! Scanner™', left, 285);
-  doc.setTextColor(...GREY);
-  doc.text('© 2024-2026 SARL 10Positif · Tous droits réservés', right, 285, { align: 'right' });
-
-  // Sauvegarder
-  const fileName = `MATCH-Offre-${m.prospect.lastName}-${m.vo.brand}-${m.vo.model}-${new Date().toISOString().slice(0,10)}.pdf`;
-  doc.save(fileName);
-  toast(`✓ PDF généré : ${fileName}`, 4000);
-}
-window.generateOfferPdf = generateOfferPdf;
 
 // ============================================================
 // PDF FICHE PROSPECT — Document A4 reflétant la fiche stockée
@@ -7680,7 +7761,7 @@ function generateProspectPdf(prospectId) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
     doc.setTextColor(...ORANGE);
-    doc.text(`${(e.coteAffinee || 0).toLocaleString('fr-FR')} €`, right - 4, y + 13, { align: 'right' });
+    doc.text(`${(e.coteAffinee || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, right - 4, y + 13, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...GREY);
@@ -7692,11 +7773,11 @@ function generateProspectPdf(prospectId) {
     doc.setTextColor(...GREY);
     let cy = y + 13;
     const techs = [];
-    if (e.priceNew) techs.push(['Prix neuf catalogue', `${e.priceNew.toLocaleString('fr-FR')} €`]);
+    if (e.priceNew) techs.push(['Prix neuf catalogue', `${e.priceNew.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`]);
     if (e.energy) techs.push(['Énergie', e.energy]);
     if (e.segment) techs.push(['Segment', e.segment]);
     if (e.fiscalPower) techs.push(['Puissance fiscale', `${e.fiscalPower} CV`]);
-    if (e.kmEstimated) techs.push(['Km estimés', `${e.kmEstimated.toLocaleString('fr-FR')} km`]);
+    if (e.kmEstimated) techs.push(['Km estimés', `${e.kmEstimated.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km`]);
     for (const [k, v] of techs.slice(0, 3)) {
       doc.text(k, left + 4, cy);
       doc.setFont('helvetica', 'bold');
@@ -7718,9 +7799,9 @@ function generateProspectPdf(prospectId) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9.5);
       doc.setTextColor(...DARK);
-      doc.text(`Plancher : ${e.repriseLow.toLocaleString('fr-FR')} €`, left + 4, y + 47);
-      doc.text(`Recommandé : ${e.repriseRecom.toLocaleString('fr-FR')} €`, left + 60, y + 47);
-      doc.text(`Plafond : ${e.repriseHigh.toLocaleString('fr-FR')} €`, left + 130, y + 47);
+      doc.text(`Plancher : ${e.repriseLow.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, left + 4, y + 47);
+      doc.text(`Recommandé : ${e.repriseRecom.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, left + 60, y + 47);
+      doc.text(`Plafond : ${e.repriseHigh.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, left + 130, y + 47);
     }
     y += 56;
   }
@@ -8445,7 +8526,7 @@ function aiAnswer(question) {
     if (matches.length > 0) {
       const top = matches[0].val;
       let reply = `📊 Voici les données ADEME pour le **${top.brand} ${top.model}** :\n\n`;
-      reply += `• Prix neuf catalogue : **${top.priceNew.toLocaleString('fr-FR')} €**\n`;
+      reply += `• Prix neuf catalogue : **${top.priceNew.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €**\n`;
       reply += `• Segment : ${top.segment}\n`;
       reply += `• Énergie principale : ${top.defaultEnergy}\n`;
       reply += `• Puissance fiscale : ${top.fiscalPower} CV\n`;
@@ -8456,7 +8537,7 @@ function aiAnswer(question) {
       }
       if (matches.length > 1) {
         reply += `\nAutres modèles correspondants :\n`;
-        reply += matches.slice(1, 4).map(m => `• ${m.val.brand} ${m.val.model} · ${m.val.priceNew.toLocaleString('fr-FR')} €`).join('\n');
+        reply += matches.slice(1, 4).map(m => `• ${m.val.brand} ${m.val.model} · ${m.val.priceNew.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`).join('\n');
       }
       reply += `\n\n💡 Pour estimer une reprise sur ce modèle, va sur l'onglet Scanner et utilise le picker manuel.`;
       return reply;
@@ -8475,12 +8556,12 @@ function aiAnswer(question) {
 
     const top = matches[0].val;
     let reply = `🚗 J'ai trouvé : **${top.brand} ${top.model}**\n\n`;
-    reply += `• Prix neuf catalogue : ${top.priceNew.toLocaleString('fr-FR')} €\n`;
+    reply += `• Prix neuf catalogue : ${top.priceNew.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
     reply += `• Segment : ${top.segment} · ${top.defaultEnergy}\n`;
     reply += `• Production : ${top.yearMin}–${top.yearMax}\n`;
     if (stockMatches.length > 0) {
       reply += `\n✅ ${stockMatches.length} en stock chez ${t.name} :\n`;
-      reply += stockMatches.slice(0, 3).map(v => `• ${v.brand} ${v.model} ${v.year || ''} · ${(v.km || 0).toLocaleString('fr-FR')} km · ${(v.price || 0).toLocaleString('fr-FR')} €`).join('\n');
+      reply += stockMatches.slice(0, 3).map(v => `• ${v.brand} ${v.model} ${v.year || ''} · ${(v.km || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km · ${(v.price || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`).join('\n');
     } else {
       reply += `\n❌ Aucun ${top.brand} ${top.model} dans ton stock VO actuel.`;
     }
@@ -8492,7 +8573,7 @@ function aiAnswer(question) {
     if (inventory.length === 0) return `Ton stock VO est vide pour le moment chez ${t.name}.\n\nTape sur 🚗 dans la barre du haut pour ajouter ton premier véhicule.`;
     const total = inventory.reduce((s, v) => s + (v.price || 0), 0);
     const moyenne = Math.round(total / inventory.length);
-    return `Tu as ${inventory.length} véhicule${inventory.length > 1 ? 's' : ''} en stock chez ${t.name} :\n• Valeur totale : ${total.toLocaleString('fr-FR')} €\n• Prix moyen : ${moyenne.toLocaleString('fr-FR')} €\n\nLes plus chers :\n${inventory.slice().sort((a,b) => (b.price||0) - (a.price||0)).slice(0,3).map(v => `• ${v.brand} ${v.model} · ${(v.price||0).toLocaleString('fr-FR')} €`).join('\n')}`;
+    return `Tu as ${inventory.length} véhicule${inventory.length > 1 ? 's' : ''} en stock chez ${t.name} :\n• Valeur totale : ${total.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n• Prix moyen : ${moyenne.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n\nLes plus chers :\n${inventory.slice().sort((a,b) => (b.price||0) - (a.price||0)).slice(0,3).map(v => `• ${v.brand} ${v.model} · ${(v.price||0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`).join('\n')}`;
   }
 
   // ============ Stats prospects ============
@@ -8511,8 +8592,8 @@ function aiAnswer(question) {
     if (matchProspect.phone) reply += `• Tél : ${matchProspect.phone}\n`;
     reply += `• Véhicule : ${matchProspect.vehicle.brand} ${matchProspect.vehicle.model} (${matchProspect.vehicle.plate})\n`;
     if (matchProspect.estimation) {
-      reply += `• Cote affinée : ${(matchProspect.estimation.coteAffinee || 0).toLocaleString('fr-FR')} €\n`;
-      reply += `• Fourchette : ${(matchProspect.estimation.repriseLow || 0).toLocaleString('fr-FR')} → ${(matchProspect.estimation.repriseHigh || 0).toLocaleString('fr-FR')} €\n`;
+      reply += `• Cote affinée : ${(matchProspect.estimation.coteAffinee || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
+      reply += `• Fourchette : ${(matchProspect.estimation.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} → ${(matchProspect.estimation.repriseHigh || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n`;
     }
     if (matchProspect.cgvAccepted) reply += `• ✅ Fiche signée le ${new Date(matchProspect.cgvAcceptedAt).toLocaleDateString('fr-FR')}\n`;
     if (matchProspect.notes) reply += `\n📝 ${matchProspect.notes}`;
@@ -8524,9 +8605,9 @@ function aiAnswer(question) {
     return 'Pour calculer une cote de reprise :\n\n1. Va sur l\'onglet Scanner\n2. Scanne ou tape une plaque\n3. Si le véhicule est hors flotte, tape sur "🎯 Identifier le véhicule"\n4. Choisis marque + modèle → cote auto-calculée\n\nLa cote utilise la base ADEME (722 modèles) + la grille VR LEASECAR + les coefficients spécifiques Réunion (+10%).';
   }
 
-  // ============ LLD ============
-  if (q.match(/lld|loyer|mensual|location.*long|financ/)) {
-    return 'Le calcul LLD se fait UNIQUEMENT sur un véhicule du parc VO (pas sur le véhicule en reprise du prospect).\n\n📐 Formule d\'annuité constante :\nLoyer = (Capital × i) / (1 - (1+i)^-n) + i × VR\n\nOù :\n• Capital = Prix vente VO - Apport - Valeur résiduelle\n• i = taux mensuel (5,5%/12)\n• n = durée en mois\n• VR = ~13%/an de décote, plancher 25%\n\nL\'apport effectif inclut :\n• L\'apport cash du client\n• + La valeur de reprise de SON véhicule actuel\n\n🎯 Workflow : 🚗 Stock VO → choisis un véhicule du parc → "🎯 Proposer à un prospect" → choisis le prospect avec sa cote de reprise déjà calculée → simulation auto.';
+  // ============ Proposition / Financement ============
+  if (q.match(/lld|loyer|mensual|location.*long|financ|propos|cr[ée]dit/)) {
+    return 'Pour faire une proposition commerciale :\n\n1. Va dans 🚗 Stock VO\n2. Choisis un véhicule\n3. Tape sur "💼 Proposition commerciale"\n4. Saisis (optionnellement) le montant de reprise et l\'apport\n5. La modal calcule automatiquement :\n   • Le prix CASH net à payer\n   • La mensualité de financement (36, 48 ou 60 mois)\n\n📐 Formule d\'annuité constante :\nMensualité = (Capital × i) / (1 - (1+i)^-n)\n\nOù :\n• Capital = Prix vente + Carte grise + Autres frais - Reprise - Apport\n• i = taux mensuel (TAEG configurable, défaut 6%)\n• n = durée en mois\n\nLe client devient PROPRIÉTAIRE à la fin (vente classique, pas LLD).';
   }
 
   // ============ Aide ============
