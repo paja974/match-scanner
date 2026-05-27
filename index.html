@@ -3116,12 +3116,12 @@ function kmCoefficient(kmCurrent, ageYears, energy) {
 // Pour les véhicules de collection, ce coefficient est SUPPLANTÉ par
 // le sélecteur de désirabilité dédié dans la section collection.
 const DESIRABILITY_COEFF = {
-  'toxique':      0.60,   // -40% : défauts chroniques connus, invendable
-  'difficile':    0.80,   // -20% : mauvaise réputation occasion
+  'toxique':      0.80,   // -20% : défauts chroniques connus, invendable
+  'difficile':    0.90,   // -10% : mauvaise réputation occasion
   'standard':     1.00,   // référence
-  'recherche':    1.30,   // +30% : demande locale forte
-  'premium_rare': 1.60,   // +60% : rare à La Réunion, clientèle premium
-  'mythique':     2.00,   // +100% : top absolu (plafond pour véhicules récents)
+  'recherche':    1.08,   // +8% : demande locale forte
+  'premium_rare': 1.15,   // +15% : rare à La Réunion, clientèle premium
+  'mythique':     1.25,   // +25% : top absolu (plafond pour véhicules récents)
 };
 
 function computeAppraisal({ priceNew, energy, ageYears, kmCurrent, brand, condition, segment, desirability }) {
