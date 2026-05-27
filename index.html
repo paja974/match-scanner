@@ -129,10 +129,19 @@
 
   #view-scan { background: #000; }
   .camera-stage {
-    position: relative; width: 100%; flex: 1 1 auto;
+    position: relative; width: 100%; flex: 1 1 0;
     background: #000; overflow: hidden; min-height: 0;
+    /* Ratio minimum pour éviter une caméra trop écrasée verticalement */
+    min-height: 50vh;
   }
-  #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #video {
+    position: absolute; inset: 0;
+    width: 100% !important; height: 100% !important;
+    object-fit: cover !important;
+    /* Forcer le centrage et éviter les bordures noires sur Safari iOS */
+    object-position: center center;
+    background: #000;
+  }
   .camera-placeholder {
     position: absolute; inset: 0; display: grid; place-items: center;
     color: var(--text-2); font-family: var(--font-mono); font-size: 11px;
@@ -947,6 +956,86 @@
       <div class="field-help">
         Champ libre par véhicule pour carburant, nettoyage, contrôle technique, petit entretien.
         La carte grise est calculée séparément depuis la puissance fiscale.
+      </div>
+    </div>
+
+    <!-- Section Calibration cotes 974 -->
+    <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line)">
+      <div style="font-family: var(--font-mono); font-size: 11px; color: var(--hi-vis); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 700; margin-bottom: 8px">📊 Calibration cotes 974</div>
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); line-height: 1.6; margin-bottom: 14px">
+        Si les cotes calculées te semblent systématiquement trop basses ou trop hautes par rapport au marché réel 974, ajuste ces curseurs. Tout est multiplicatif sur la cote finale.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Coefficient régional 974 (%)</label>
+      <input type="number" min="-30" max="50" step="1" class="field-input" id="settingsReunionBonus" placeholder="10" autocomplete="off" />
+      <div class="field-help">
+        Prime appliquée à TOUTE cote 974 vs métropole. Défaut +10%. Si tu observes des cotes systématiquement basses, monte à +15% ou +20%.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Prime diesel (%)</label>
+      <input type="number" min="-20" max="30" step="1" class="field-input" id="settingsDieselBonus" placeholder="3" autocomplete="off" />
+      <div class="field-help">
+        Bonus appliqué aux véhicules diesel (forte demande 974, pas de ZFE). Défaut +3%. Tu peux monter à +8% ou +10% si tu vois le marché soutenir bien le diesel.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Bonus véhicule 0-3 ans (%)</label>
+      <input type="number" min="-10" max="30" step="1" class="field-input" id="settingsYouthBonus03" placeholder="0" autocomplete="off" />
+      <div class="field-help">
+        Prime sur véhicules récents (jusqu'à 3 ans). Mets +5% ou +10% si l'app sous-cote les véhicules quasi-neufs (forte demande 974).
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Bonus véhicule 3-6 ans (%)</label>
+      <input type="number" min="-10" max="20" step="1" class="field-input" id="settingsYouthBonus36" placeholder="0" autocomplete="off" />
+      <div class="field-help">
+        Véhicules de moyen âge (3 à 6 ans). Souvent le sweet spot du marché VO 974.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Bonus véhicule 6-10 ans (%)</label>
+      <input type="number" min="-10" max="20" step="1" class="field-input" id="settingsYouthBonus610" placeholder="0" autocomplete="off" />
+      <div class="field-help">
+        Véhicules de 6 à 10 ans. Au-delà de 10 ans, les coefficients standards s'appliquent sans bonus jeunesse.
+      </div>
+    </div>
+
+    <!-- Section Ratios Argus → Offre pro -->
+    <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line)">
+      <div style="font-family: var(--font-mono); font-size: 11px; color: var(--hi-vis); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 700; margin-bottom: 8px">🅰️ Ratios Argus → Offre pro</div>
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-2); line-height: 1.6; margin-bottom: 14px">
+        Pourcentage appliqué à la Cote Argus officielle (saisie depuis Leboncoin Pro / Planet VO²) pour calculer l'offre de reprise pro. LOW pour rachat sec, RECOM pour reprise avec achat, HIGH pour véhicules ex-LEASECAR ou geste commercial.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Ratio LOW (%) — rachat seul</label>
+      <input type="number" min="50" max="100" step="1" class="field-input" id="settingsArgusRatioLow" placeholder="80" autocomplete="off" />
+      <div class="field-help">
+        Reprise seule sans achat VO. Défaut 80% de l'Argus.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Ratio RECOM (%) — reprise avec achat</label>
+      <input type="number" min="50" max="100" step="1" class="field-input" id="settingsArgusRatioRecom" placeholder="85" autocomplete="off" />
+      <div class="field-help">
+        Reprise avec achat d'un VO. Défaut 85% de l'Argus.
+      </div>
+    </div>
+
+    <div class="field" style="margin-top: 14px">
+      <label class="field-label">Ratio HIGH (%) — geste commercial</label>
+      <input type="number" min="50" max="100" step="1" class="field-input" id="settingsArgusRatioHigh" placeholder="90" autocomplete="off" />
+      <div class="field-help">
+        Véhicule ex-LEASECAR ou geste commercial pour conclure. Défaut 90% de l'Argus.
       </div>
     </div>
 
@@ -2359,13 +2448,162 @@ function coefficient974(energy, fiscalPower) {
   return 1.28;                  // >2500cc / gros V6+
 }
 
-// Fonction publique : retourne le prix neuf 974 calibré pour un modèle ADEME
+// ============================================================
+// TABLE PRIX CATALOGUE 974 — DONNÉES LEASECAR RÉELLES
+// Source : 3 508 véhicules achetés par LEASECAR (gestion flotte)
+// Format : médiane du PRIX CATALOGUE TTC hors CG par modèle
+// Mise à jour : 27/05/2026
+// ============================================================
+const PRICE_974_LEASECAR = {
+  'peugeot 208': { price: 25681, n: 643, type: 'VP', years: '2019-2026' },
+  'citroen c3': { price: 24531, n: 355, type: 'VP', years: '2020-2026' },
+  'peugeot partner': { price: 28297, n: 247, type: 'VU', years: '2019-2026' },
+  'toyota yaris': { price: 25021, n: 182, type: 'VP', years: '2019-2026' },
+  'peugeot 2008': { price: 36408, n: 172, type: 'VP', years: '2019-2026' },
+  'renault clio': { price: 27800, n: 157, type: 'VP', years: '2021-2026' },
+  'peugeot boxer': { price: 42595, n: 154, type: 'VU', years: '2020-2026' },
+  'citroen berlingo': { price: 27997, n: 106, type: 'VU', years: '2021-2026' },
+  'toyota yaris cross': { price: 30891, n: 94, type: 'VP', years: '2021-2026' },
+  'dacia duster': { price: 28880, n: 86, type: 'VP', years: '2020-2026' },
+  'peugeot e-2008': { price: 46586, n: 86, type: 'VP', years: '2020-2026' },
+  'peugeot 3008': { price: 48000, n: 66, type: 'VP', years: '2021-2026' },
+  'citroen jumper': { price: 39195, n: 64, type: 'VU', years: '2018-2026' },
+  'peugeot e-208': { price: 39876, n: 62, type: 'VP', years: '2020-2025' },
+  'renault kangoo': { price: 27638, n: 60, type: 'VU', years: '2020-2026' },
+  'peugeot expert': { price: 34510, n: 50, type: 'VU', years: '2020-2026' },
+  'peugeot 308': { price: 38929, n: 46, type: 'VP', years: '2019-2026' },
+  'citroen c3 aircross': { price: 29836, n: 42, type: 'VP', years: '2022-2026' },
+  'opel corsa': { price: 26691, n: 38, type: 'VP', years: '2022-2025' },
+  'citroen c4': { price: 37149, n: 33, type: 'VP', years: '2021-2026' },
+  'citroen jumpy': { price: 32597, n: 29, type: 'VU', years: '2020-2026' },
+  'ford transit': { price: 25907, n: 29, type: 'VU', years: '2020-2025' },
+  'iveco new daily': { price: 54400, n: 28, type: 'VU', years: '2020-2023' },
+  'dacia jogger': { price: 34600, n: 26, type: 'VP', years: '2022-2026' },
+  'renault express van': { price: 21950, n: 26, type: 'VU', years: '2023-2024' },
+  'renault trafic': { price: 43468, n: 24, type: 'VP', years: '2021-2026' },
+  'toyota corolla': { price: 30821, n: 22, type: 'VP', years: '2020-2025' },
+  'renault master': { price: 44760, n: 21, type: 'VU', years: '2019-2026' },
+  'kia stonic': { price: 27500, n: 21, type: 'VP', years: '2022-2025' },
+  'toyota corolla cross': { price: 36268, n: 20, type: 'VP', years: '2023-2026' },
+  'hyundai kona': { price: 38400, n: 18, type: 'VP', years: '2023-2026' },
+  'toyota rav4': { price: 43890, n: 16, type: 'VP', years: '2020-2025' },
+  'renault captur': { price: 36050, n: 16, type: 'VP', years: '2020-2026' },
+  'kia rio': { price: 20836, n: 16, type: 'VU', years: '2022-2024' },
+  'kia picanto': { price: 19236, n: 15, type: 'VU', years: '2023-2024' },
+  'toyota hilux': { price: 36684, n: 14, type: 'VU', years: '2020-2025' },
+  'toyota chr': { price: 36771, n: 13, type: 'VP', years: '2020-2025' },
+  'peugeot rifter': { price: 35200, n: 13, type: 'VU', years: '2021-2024' },
+  'hyundai i10': { price: 20490, n: 13, type: 'VP', years: '2025-2025' },
+  'fiat ducato': { price: 37095, n: 12, type: 'VU', years: '2022-2025' },
+  'ford puma': { price: 28427, n: 11, type: 'VP', years: '2020-2023' },
+  'renault zoe': { price: 39736, n: 11, type: 'VP', years: '2021-2024' },
+  'peugeot 408': { price: 54023, n: 10, type: 'VP', years: '2023-2025' },
+  'dacia sandero': { price: 22181, n: 9, type: 'VP', years: '2021-2024' },
+  'kia sportage': { price: 48930, n: 9, type: 'VP', years: '2015-2025' },
+  'peugeot e-3008': { price: 59200, n: 9, type: 'VP', years: '2025-2025' },
+  'renault megane': { price: 57525, n: 8, type: 'VP', years: '2022-2024' },
+  'citroen c5 aircross': { price: 42950, n: 8, type: 'VP', years: '2022-2024' },
+  'mercedes gla': { price: 66981, n: 7, type: 'VP', years: '2021-2024' },
+  'dacia spring': { price: 27600, n: 7, type: 'VP', years: '2023-2023' },
+  'iveco daily': { price: 76500, n: 7, type: 'VU', years: '2023-2025' },
+  'dacia sandero stepway': { price: 21950, n: 7, type: 'VP', years: '2023-2025' },
+  'citroen c1': { price: 15990, n: 6, type: 'VP', years: '2021-2021' },
+  'ds ds3': { price: 52617, n: 6, type: 'VP', years: '2021-2025' },
+  'toyota proace': { price: 28137, n: 6, type: 'VU', years: '2021-2023' },
+  'fiat panda': { price: 19836, n: 6, type: 'VU', years: '2023-2023' },
+  'opel astra': { price: 46754, n: 6, type: 'VP', years: '2023-2025' },
+  'peugeot e-rifter': { price: 45611, n: 6, type: 'VU', years: '2024-2025' },
+  'citroen e-c3': { price: 31958, n: 6, type: 'VP', years: '2025-2025' },
+  'dacia dokker': { price: 17500, n: 5, type: 'VU', years: '2021-2022' },
+  'ford fiesta': { price: 22170, n: 5, type: 'VP', years: '2021-2022' },
+  'skoda karoq': { price: 47550, n: 5, type: 'VP', years: '2021-2024' },
+  'renault express': { price: 21950, n: 5, type: 'VU', years: '2022-2024' },
+  'opel combo': { price: 23097, n: 5, type: 'VU', years: '2022-2023' },
+  'kia ev6': { price: 65746, n: 5, type: 'VP', years: '2022-2026' },
+  'citroen c4x': { price: 37839, n: 5, type: 'VP', years: '2023-2024' },
+  'peugeot new 308': { price: 52366, n: 5, type: 'VP', years: '2025-2025' },
+  'dacia lodgy': { price: 26180, n: 4, type: 'VP', years: '2020-2022' },
+  'peugeot 108': { price: 16883, n: 4, type: 'VP', years: '2021-2021' },
+  'fiat doblo': { price: 28048, n: 4, type: 'VU', years: '2022-2026' },
+  'peugeot e-expert': { price: 58200, n: 4, type: 'VU', years: '2022-2025' },
+  'citroen e-c4': { price: 43786, n: 4, type: 'VP', years: '2022-2025' },
+  'fiat panda street': { price: 15736, n: 4, type: 'VU', years: '2023-2023' },
+  'renault austral': { price: 48190, n: 4, type: 'VP', years: '2023-2025' },
+  'ds ds7': { price: 74176, n: 4, type: 'VP', years: '2024-2026' },
+  'renault arkana': { price: 36500, n: 4, type: 'VU', years: '2024-2024' },
+  'peugeot e-308': { price: 53172, n: 4, type: 'VP', years: '2025-2025' },
+  'kia e-niro': { price: 51176, n: 4, type: 'VP', years: '2025-2025' },
+  'mercedes sprinter': { price: 62570, n: 3, type: 'VU', years: '2019-2026' },
+  'fiat 500 x': { price: 29450, n: 3, type: 'VP', years: '2020-2021' },
+  'mercedes classe a': { price: 62381, n: 3, type: 'VP', years: '2020-2022' },
+  'hyundai tucson': { price: 53630, n: 3, type: 'VP', years: '2021-2026' },
+  'jaguar i-pace': { price: 97753, n: 3, type: 'VP', years: '2021-2025' },
+  'bmw ix3': { price: 82006, n: 3, type: 'VP', years: '2021-2024' },
+  'mercedes glc': { price: 113655, n: 3, type: 'VP', years: '2022-2025' },
+  'fiat 500e': { price: 43986, n: 3, type: 'VP', years: '2022-2024' },
+  'toyota pro ace': { price: 28387, n: 3, type: 'VU', years: '2022-2022' },
+  'mg zs': { price: 37300, n: 3, type: 'VU', years: '2023-2026' },
+  'mg mg4': { price: 39626, n: 3, type: 'VP', years: '2023-2024' },
+  'mg marvel r': { price: 49976, n: 3, type: 'VP', years: '2024-2024' },
+  'citroen ec4': { price: 44158, n: 3, type: 'VP', years: '2025-2025' },
+  'porsche macan': { price: 149349, n: 3, type: 'VP', years: '2025-2026' },
+};
+
+window.PRICE_974_LEASECAR = PRICE_974_LEASECAR;
+
+// Normalisation des marques pour matcher la table LEASECAR (CITROËN → CITROEN, etc.)
+function normalizeBrandForLeasecar(b) {
+  if (!b) return '';
+  let s = b.toLowerCase().trim();
+  // Variantes Citroën/Citroen
+  if (s === 'citroën') s = 'citroen';
+  return s;
+}
+
+// Normalisation des modèles pour matcher la table LEASECAR
+// (Renault Clio 5 / Clio V / Clio → tous mappés vers "clio", etc.)
+function normalizeModelForLeasecar(brand, model) {
+  if (!model) return '';
+  let s = String(model).toLowerCase().trim();
+  const b = normalizeBrandForLeasecar(brand);
+  if (b === 'renault') {
+    if (s === 'clio 5' || s === 'clio v') s = 'clio';
+    if (s === 'megane') s = 'megane';
+  }
+  if (b === 'peugeot') {
+    if (s === 'e2008') s = 'e-2008';
+    if (s === 'e208') s = 'e-208';
+    if (s === 'e3008') s = 'e-3008';
+  }
+  return s;
+}
+
+// Fonction publique : retourne le prix neuf catalogue TTC 974 d'un modèle
+// Priorité :
+//   1. PRICE_974_LEASECAR (données réelles 3508 véhicules, médiane catalogue TTC)
+//   2. PRICE_974_EMPIRIC (table empirique calibrée à la main)
+//   3. ADEME_DB × coef OPMR (extrapolation théorique)
 function getPrice974(brand, model, energy, fiscalPower) {
-  const key = `${(brand || '').toLowerCase()} ${(model || '').toLowerCase()}`.trim();
-  // Couche A : prix empirique 974 si disponible
+  const b = normalizeBrandForLeasecar(brand);
+  const m = normalizeModelForLeasecar(brand, model);
+  const key = `${b} ${m}`.trim();
+
+  // Couche 0 (la plus fiable) : PRICE_974_LEASECAR
+  if (PRICE_974_LEASECAR[key]) {
+    const entry = PRICE_974_LEASECAR[key];
+    return {
+      price: entry.price,
+      source: 'leasecar-' + entry.n,
+      detail: `${entry.n} véhicules observés · ${entry.years}`,
+      type: entry.type,
+    };
+  }
+
+  // Couche A : prix empirique 974 si disponible (clé en minuscule)
   if (PRICE_974_EMPIRIC[key]) {
     return { price: PRICE_974_EMPIRIC[key], source: 'empirique-974' };
   }
+
   // Couche B : extrapolation via coefficient OPMR + ADEME_DB
   const ademeEntry = ADEME_DB[key];
   if (!ademeEntry) return { price: null, source: null };
@@ -2470,6 +2708,127 @@ function computeCarteGrise974(fiscalPower, year) {
   };
 }
 window.computeCarteGrise974 = computeCarteGrise974;
+
+// ============================================================
+// HELPERS COTE ARGUS (saisie manuelle depuis Leboncoin Pro / Planet VO²)
+// ============================================================
+// Calcule l'offre pro à partir de la cote Argus et du mode (low/recom/high)
+function computeArgusOffer(argusValue, mode) {
+  if (!argusValue || argusValue <= 0) return 0;
+  const s = state.settings || {};
+  let ratio;
+  if (mode === 'low') ratio = s.argusRatioLow != null ? s.argusRatioLow : 80;
+  else if (mode === 'high') ratio = s.argusRatioHigh != null ? s.argusRatioHigh : 90;
+  else ratio = s.argusRatioRecom != null ? s.argusRatioRecom : 85;
+  return Math.round(argusValue * ratio / 100 / 50) * 50;  // arrondi à 50€ près
+}
+window.computeArgusOffer = computeArgusOffer;
+
+// Construit l'URL Leboncoin Cote Argus avec marque/modèle/année pré-remplis
+// (à utiliser pour ouvrir le dashboard pro avec contexte)
+function buildLeboncoinArgusUrl(brand, model, year) {
+  // Page d'accueil Cote Argus Leboncoin (l'utilisateur saisit ensuite ses paramètres)
+  // Cette URL ne peut pas être pré-remplie via paramètres car Leboncoin n'expose pas
+  // de query string publique. On ouvre la page de calcul.
+  return 'https://www.leboncoin.fr/service/cote-argus';
+}
+window.buildLeboncoinArgusUrl = buildLeboncoinArgusUrl;
+
+// Formate une date YYYY-MM-DD vers "JJ/MM/AAAA"
+function fmtDateFr(isoDate) {
+  if (!isoDate) return '';
+  const m = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return isoDate;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+window.fmtDateFr = fmtDateFr;
+
+// Rafraîchit l'affichage des offres pro basées sur la cote Argus saisie
+// Appelée à chaque modification du champ argusValueInput
+window.refreshArgusOffers = function() {
+  const input = document.getElementById('argusValueInput');
+  const dateInput = document.getElementById('argusDateInput');
+  if (!input) return;
+  const argusValue = parseFloat(input.value) || 0;
+  const cmpBlock = document.getElementById('argusComparisonBlock');
+  const offersBlock = document.getElementById('argusOffersBlock');
+
+  if (!argusValue || argusValue <= 0) {
+    if (cmpBlock) cmpBlock.style.display = 'none';
+    if (offersBlock) offersBlock.style.display = 'none';
+    window.__currentAppraisalArgus = null;
+    return;
+  }
+
+  const offerLow = computeArgusOffer(argusValue, 'low');
+  const offerRecom = computeArgusOffer(argusValue, 'recom');
+  const offerHigh = computeArgusOffer(argusValue, 'high');
+
+  const f = n => n.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ');
+  const v = document.getElementById('argusValueDisplay'); if (v) v.textContent = f(argusValue) + ' €';
+  const ol = document.getElementById('argusOfferLow'); if (ol) ol.textContent = f(offerLow) + ' €';
+  const or = document.getElementById('argusOfferRecom'); if (or) or.textContent = f(offerRecom) + ' €';
+  const oh = document.getElementById('argusOfferHigh'); if (oh) oh.textContent = f(offerHigh) + ' €';
+
+  const r = window.__currentAppraisal;
+  if (r && r.repriseRecom) {
+    const delta = argusValue - r.repriseRecom;
+    const deltaPct = Math.round((delta / r.repriseRecom) * 100);
+    const sign = delta >= 0 ? '+' : '';
+    const color = Math.abs(deltaPct) <= 10 ? 'var(--signal-green)' : (Math.abs(deltaPct) <= 25 ? '#f59e0b' : 'var(--signal-red)');
+    const deltaEl = document.getElementById('argusDeltaDisplay');
+    if (deltaEl) {
+      deltaEl.innerHTML = `Écart théorique → Argus : <strong style="color:${color}">${sign}${f(delta)} € (${sign}${deltaPct}%)</strong>`;
+    }
+  }
+
+  if (cmpBlock) cmpBlock.style.display = 'block';
+  if (offersBlock) offersBlock.style.display = 'block';
+
+  window.__currentAppraisalArgus = {
+    value: argusValue,
+    date: dateInput ? dateInput.value : new Date().toISOString().slice(0, 10),
+    offerLow,
+    offerRecom,
+    offerHigh,
+  };
+};
+
+// Wrappers qui injectent la cote Argus si saisie, sinon fallback théorique
+// Appelés depuis les boutons "🤝 RACHAT SEUL" et "🚗 AVEC ACHAT VO" de la cote affinée
+window.openBuybackFromAppraisal = function(theoricalData) {
+  const argus = window.__currentAppraisalArgus;
+  if (argus && argus.value > 0) {
+    // Utiliser les offres Argus
+    return openBuybackOnlyProposal({
+      ...theoricalData,
+      low: argus.offerLow,
+      recom: argus.offerRecom,
+      high: argus.offerHigh,
+      argusValue: argus.value,
+      argusDate: argus.date,
+      sourceLabel: 'Cote Argus officielle',
+    });
+  }
+  // Fallback : valeurs théoriques
+  return openBuybackOnlyProposal(theoricalData);
+};
+
+window.openProposalFromAppraisalSmart = function(theoricalData) {
+  const argus = window.__currentAppraisalArgus;
+  if (argus && argus.value > 0) {
+    return openProposalFromAppraisal({
+      ...theoricalData,
+      low: argus.offerLow,
+      recom: argus.offerRecom,
+      high: argus.offerHigh,
+      argusValue: argus.value,
+      argusDate: argus.date,
+      sourceLabel: 'Cote Argus officielle',
+    });
+  }
+  return openProposalFromAppraisal(theoricalData);
+};
 window.coefficient974 = coefficient974;
 window.PRICE_974_EMPIRIC = PRICE_974_EMPIRIC;
 // ============================================================
@@ -2496,9 +2855,9 @@ const VR_GRID = {
     18: [55,54,53,52,50,49,49,48,47,46,46,45,44,42,40,38,37,35,34,32,29,27,27],
     24: [57,56,55,54,53,52,51,51,50,49,48,47,46,45,42,40,38,35,32,29,27,26,25],
     30: [49,48,47,46,46,45,45,44,43,42,41,40,40,39,36,34,32,30,28,26,25,24,24],
-    36: [45,44,43,44,44,44,45,43,41,40,39,38,37,35,32,30,28,26,24,22,20,19,18],
-    48: [39,38,37,38,38,38,39,37,35,34,33,32,30,28,25,23,22,20,18,17,16,15,14],
-    60: [32,31,30,30,30,30,30,29,29,29,29,29,28,28,23,21,19,18,17,16,15,13,11],
+    36: [45,44,43,44,44,44,45,43,41,40,39,38,37,35,34,32,29,27,25,22,20,18,16],
+    48: [39,38,37,38,38,38,39,37,35,34,33,32,30,28,26,24,22,21,20,18,17,16,15],
+    60: [32,31,30,30,30,30,30,29,29,29,29,29,28,28,24,22,20,19,18,17,16,14,12],
   },
 };
 // Hybride = moyenne Essence/Diesel
@@ -2594,6 +2953,12 @@ const PRICE_LIST = {
 
 function estimatePrice(brand, model) {
   if (!brand || !model) return null;
+  // Priorité 1 : getPrice974 (couche LEASECAR + EMPIRIC + OPMR)
+  if (typeof getPrice974 === 'function') {
+    const result = getPrice974(brand, model, null, null);
+    if (result && result.price) return result.price;
+  }
+  // Priorité 2 : PRICE_LIST historique (legacy)
   const key = `${brand} ${model}`.toLowerCase().trim();
   if (PRICE_LIST[key]) return PRICE_LIST[key];
   // Fuzzy: match on brand only
@@ -2605,6 +2970,21 @@ function estimatePrice(brand, model) {
   }
   return null;
 }
+
+// Version riche qui retourne aussi la source pour affichage
+function estimatePriceWithSource(brand, model) {
+  if (!brand || !model) return null;
+  if (typeof getPrice974 === 'function') {
+    const result = getPrice974(brand, model, null, null);
+    if (result && result.price) {
+      return { price: result.price, source: result.source, detail: result.detail };
+    }
+  }
+  const key = `${brand} ${model}`.toLowerCase().trim();
+  if (PRICE_LIST[key]) return { price: PRICE_LIST[key], source: 'price-list-legacy' };
+  return null;
+}
+window.estimatePriceWithSource = estimatePriceWithSource;
 
 // Compute full appraisal
 // ============================================================
@@ -2642,20 +3022,42 @@ const CONDITION_COEFF = {
 };
 
 // Coefficient énergie — Marché La Réunion (974)
-// ATTENTION : ces valeurs sont CALIBRÉES POUR LA RÉUNION et diffèrent
-// de la métropole. En métropole, le diesel subit une pénalité ZFE -8%,
-// mais La Réunion n'a pas de ZFE, le gasoil est moins cher, et les
-// km annuels sont élevés (rentabilité diesel). L'électrique reste
-// pénalisé localement (recharge limitée, batteries chaleur tropicale).
-const ENERGY_MARKET_COEFF = {
-  'ESSENCE': 1.00,     // référence
-  'DIESEL': 1.03,      // +3% prime locale (pas de ZFE, gasoil moins cher, km élevés)
-  'HYBRIDE': 1.05,     // +5% prime hybride VO (offre encore rare)
-  'ELECTRIQUE': 0.90,  // -10% volatilité batterie + recharge limitée + chaleur
+// CONFIGURABLE : valeurs par défaut, surchargées par les Réglages utilisateur
+// Pour ajuster, va dans ⚙ Réglages → Calibration 974.
+const ENERGY_MARKET_COEFF_DEFAULT = {
+  'ESSENCE': 1.00,
+  'DIESEL': 1.03,      // ajustable Réglages
+  'HYBRIDE': 1.05,
+  'ELECTRIQUE': 0.90,
 };
+function getEnergyCoeff(energy) {
+  const e = (energy || '').toUpperCase();
+  const dieselBonus = (state.settings && state.settings.dieselBonus != null) ? state.settings.dieselBonus : 3;
+  if (e === 'DIESEL' || e === 'GASOIL') return 1 + (dieselBonus / 100);
+  return ENERGY_MARKET_COEFF_DEFAULT[e] || 1.00;
+}
+// Conservé pour rétro-compat (mais la fonction getEnergyCoeff est préférée)
+const ENERGY_MARKET_COEFF = ENERGY_MARKET_COEFF_DEFAULT;
 
 // Coefficient régional La Réunion (marché insulaire)
-const REUNION_COEFF = 1.10; // +10% vs métropole (import coûteux, offre limitée)
+// CONFIGURABLE : défaut +10%, ajustable en Réglages
+const REUNION_COEFF_DEFAULT = 1.10;
+function getReunionCoeff() {
+  const bonus = (state.settings && state.settings.reunionBonus != null) ? state.settings.reunionBonus : 10;
+  return 1 + (bonus / 100);
+}
+const REUNION_COEFF = REUNION_COEFF_DEFAULT;
+
+// Bonus jeunesse — décote plus lente sur véhicules récents en 974
+// CONFIGURABLE : prime appliquée selon l'âge du véhicule
+function getYouthBonus(ageYears) {
+  const s = state.settings || {};
+  const a = parseFloat(ageYears) || 0;
+  if (a <= 3) return 1 + ((s.youthBonus03 != null ? s.youthBonus03 : 0) / 100);
+  if (a <= 6) return 1 + ((s.youthBonus36 != null ? s.youthBonus36 : 0) / 100);
+  if (a <= 10) return 1 + ((s.youthBonus610 != null ? s.youthBonus610 : 0) / 100);
+  return 1;
+}
 
 // Coefficient kilométrique relatif au km ATTENDU selon âge + énergie
 // Référentiel marché : essence/hybride/électrique = 15 000 km/an,
@@ -2736,12 +3138,13 @@ function computeAppraisal({ priceNew, energy, ageYears, kmCurrent, brand, condit
   const coefBrand = BRAND_COEFF[brandKey] || 1.00;
   const coefSegment = SEGMENT_COEFF[segment] || 1.00;
   const coefCondition = CONDITION_COEFF[condition] || 1.00;
-  const coefEnergy = ENERGY_MARKET_COEFF[e] || 1.00;
+  const coefEnergy = getEnergyCoeff(e);            // ← dynamique (Réglages)
   const coefKm = kmCoefficient(kmCurrent, ageYears, e);
-  const coefRegion = REUNION_COEFF;
+  const coefRegion = getReunionCoeff();            // ← dynamique (Réglages)
+  const coefYouth = getYouthBonus(ageYears);       // ← nouveau bonus jeunesse
   const coefDesir = DESIRABILITY_COEFF[desirability] || 1.00;
 
-  const coefTotal = coefBrand * coefSegment * coefCondition * coefEnergy * coefKm * coefRegion * coefDesir;
+  const coefTotal = coefBrand * coefSegment * coefCondition * coefEnergy * coefKm * coefRegion * coefYouth * coefDesir;
 
   // 3. Cote affinée
   const coteAffinee = Math.round((vrBrut * coefTotal) / 100) * 100;
@@ -2820,9 +3223,9 @@ window.calculateCreditCost = calculateCreditCost;
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, marginVo: 20, feesVo: 350, cvRate974: 60, antsFee: 12.76, ...JSON.parse(raw) };
+    if (raw) return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, marginVo: 20, feesVo: 100, cvRate974: 60, antsFee: 12.76, reunionBonus: 10, dieselBonus: 3, youthBonus03: 0, youthBonus36: 0, youthBonus610: 0, argusRatioLow: 80, argusRatioRecom: 85, argusRatioHigh: 90, ...JSON.parse(raw) };
   } catch (e) {}
-  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, marginVo: 20, feesVo: 350, cvRate974: 60, antsFee: 12.76 };
+  return { token: '', region: 'fr', mmc: true, strict: true, regcheckUsername: '', taeg: 6.0, marginVo: 20, feesVo: 100, cvRate974: 60, antsFee: 12.76, reunionBonus: 10, dieselBonus: 3, youthBonus03: 0, youthBonus36: 0, youthBonus610: 0, argusRatioLow: 80, argusRatioRecom: 85, argusRatioHigh: 90 };
 }
 function saveSettings() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings)); } catch (e) {}
@@ -4493,6 +4896,14 @@ function openSettings() {
   el('settingsCvRate974').value = state.settings.cvRate974 != null ? state.settings.cvRate974 : 60;
   el('settingsAntsFee').value = state.settings.antsFee != null ? state.settings.antsFee : 12.76;
   el('settingsFeesVo').value = state.settings.feesVo != null ? state.settings.feesVo : 100;
+  el('settingsReunionBonus').value = state.settings.reunionBonus != null ? state.settings.reunionBonus : 10;
+  el('settingsDieselBonus').value = state.settings.dieselBonus != null ? state.settings.dieselBonus : 3;
+  el('settingsYouthBonus03').value = state.settings.youthBonus03 != null ? state.settings.youthBonus03 : 0;
+  el('settingsYouthBonus36').value = state.settings.youthBonus36 != null ? state.settings.youthBonus36 : 0;
+  el('settingsYouthBonus610').value = state.settings.youthBonus610 != null ? state.settings.youthBonus610 : 0;
+  el('settingsArgusRatioLow').value = state.settings.argusRatioLow != null ? state.settings.argusRatioLow : 80;
+  el('settingsArgusRatioRecom').value = state.settings.argusRatioRecom != null ? state.settings.argusRatioRecom : 85;
+  el('settingsArgusRatioHigh').value = state.settings.argusRatioHigh != null ? state.settings.argusRatioHigh : 90;
   refreshQuotaDisplay();
   el('settingsModal').classList.add('show');
 }
@@ -4532,6 +4943,14 @@ el('btnSaveSettings').addEventListener('click', () => {
     cvRate974: parseFloat(el('settingsCvRate974').value) || 60,
     antsFee: parseFloat(el('settingsAntsFee').value) || 12.76,
     feesVo: parseFloat(el('settingsFeesVo').value) || 100,
+    reunionBonus: parseFloat(el('settingsReunionBonus').value) || 0,
+    dieselBonus: parseFloat(el('settingsDieselBonus').value) || 0,
+    youthBonus03: parseFloat(el('settingsYouthBonus03').value) || 0,
+    youthBonus36: parseFloat(el('settingsYouthBonus36').value) || 0,
+    youthBonus610: parseFloat(el('settingsYouthBonus610').value) || 0,
+    argusRatioLow: parseFloat(el('settingsArgusRatioLow').value) || 80,
+    argusRatioRecom: parseFloat(el('settingsArgusRatioRecom').value) || 85,
+    argusRatioHigh: parseFloat(el('settingsArgusRatioHigh').value) || 90,
   };
   saveSettings();
   refreshEngineUi();
@@ -4685,11 +5104,22 @@ el('btnAppraisalLookup').addEventListener('click', async () => {
       energyBtn.querySelector('span').textContent = labels[energyVal];
     }
 
-    // Estimate price from internal table
-    const estimatedPrice = estimatePrice(make, model);
+    // Estimate price from internal table (avec source)
+    const priceInfo = estimatePriceWithSource(make, model);
+    const estimatedPrice = priceInfo ? priceInfo.price : null;
     if (estimatedPrice && !el('ap_price').value) {
       el('ap_price').value = estimatedPrice;
-      toast(`Données récupérées · prix estimé ${estimatedPrice.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}€ (à valider)`);
+      // Construire le message selon la source
+      let sourceLabel = '';
+      if (priceInfo.source && priceInfo.source.startsWith('leasecar-')) {
+        const n = priceInfo.source.replace('leasecar-', '');
+        sourceLabel = ` · source LEASECAR (${n} véhicules)`;
+      } else if (priceInfo.source === 'empirique-974') {
+        sourceLabel = ' · source empirique 974';
+      } else if (priceInfo.source === 'extrapolé-OPMR') {
+        sourceLabel = ' · estimé (ADEME + octroi de mer)';
+      }
+      toast(`Prix neuf 974 : ${estimatedPrice.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')}€${sourceLabel}`, 4000);
     } else {
       toast('Données récupérées · saisis le prix neuf');
     }
@@ -4988,6 +5418,9 @@ const btnReset = document.getElementById('btnResetAppraisal');
 if (btnReset) btnReset.addEventListener('click', resetAppraisalForm);
 
 function renderAppraisalResult(r) {
+  // Stocker la cote courante pour que le bloc Argus puisse comparer
+  window.__currentAppraisal = r;
+  window.__currentAppraisalArgus = null;  // reset Argus à chaque nouvelle cote
   const energyLabel = { ESSENCE: 'Essence', DIESEL: 'Diesel', HYBRIDE: 'Hybride', ELECTRIQUE: 'Électrique' }[r.energy] || r.energy;
   const energyColor = { ESSENCE: '#e8a845', DIESEL: '#a78bfa', HYBRIDE: '#34d399', ELECTRIQUE: '#60a5fa' }[r.energy];
   const fmt = n => n.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ') + ' €';
@@ -5007,7 +5440,27 @@ function renderAppraisalResult(r) {
         <div class="vehicle-sub">${r.year} · ${r.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km · ${(r.ageYears).toFixed(1)} ans</div>
         <div class="status-bar">
           <div class="badge" style="color: ${energyColor}; border-color: ${energyColor}40">${energyLabel}</div>
-          <div class="badge">Prix neuf ${fmt(r.priceNew)}</div>
+          <div class="badge" title="${(() => {
+            // Récupérer source du prix neuf
+            if (typeof getPrice974 !== 'function') return '';
+            const p = getPrice974(r.brand, r.model, r.energy, null);
+            if (!p || !p.source) return '';
+            if (p.source.startsWith('leasecar-')) return `Source LEASECAR : ${p.detail || p.source.replace('leasecar-', '') + ' véhicules observés'}`;
+            if (p.source === 'empirique-974') return 'Source : table empirique 974 calibrée à la main';
+            if (p.source === 'extrapolé-OPMR') return 'Source : ADEME × coefficient OPMR (extrapolation théorique)';
+            return '';
+          })()}">Prix neuf ${fmt(r.priceNew)}${(() => {
+            if (typeof getPrice974 !== 'function') return '';
+            const p = getPrice974(r.brand, r.model, r.energy, null);
+            if (!p || !p.source) return '';
+            if (p.source.startsWith('leasecar-')) {
+              const n = p.source.replace('leasecar-', '');
+              return ` <span style="color:var(--signal-green);font-size:9px">⚡LEASECAR×${n}</span>`;
+            }
+            if (p.source === 'empirique-974') return ` <span style="color:var(--hi-vis);font-size:9px">⚙ 974</span>`;
+            if (p.source === 'extrapolé-OPMR') return ` <span style="color:#f59e0b;font-size:9px">~ estimé</span>`;
+            return '';
+          })()}</div>
           <div class="badge">Coef total ×${r.coefTotal}</div>
         </div>
       </div>
@@ -5139,12 +5592,81 @@ function renderAppraisalResult(r) {
         </div>
       </div>` : ''}
 
+      <!-- ===== BLOC COTE ARGUS (saisie depuis Leboncoin Pro / Planet VO²) ===== -->
+      <div class="section" style="background:var(--bg-1);border:1px solid var(--line);border-radius:8px;margin:14px 0;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--hi-vis);letter-spacing:1.5px;text-transform:uppercase;font-weight:700">🅰️ Cote Argus officielle</div>
+          <button onclick="window.open('${buildLeboncoinArgusUrl(r.brand, r.model, r.year)}', '_blank')" style="padding:6px 10px;background:var(--bg-2);border:1px solid var(--hi-vis);color:var(--hi-vis);border-radius:4px;font-family:var(--font-mono);font-size:9.5px;font-weight:700;cursor:pointer">🔗 OUVRIR LEBONCOIN</button>
+        </div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);line-height:1.5;margin-bottom:10px">
+          Calcule la Cote Argus sur Leboncoin Pro / Planet VO², puis recopie ici pour comparaison avec la cote théorique calculée.
+        </div>
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:10px">
+          <div>
+            <label style="display:block;font-family:var(--font-mono);font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Cote Argus (€)</label>
+            <input type="number" min="0" step="50" id="argusValueInput" placeholder="ex: 12 500" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:14px;font-weight:700;box-sizing:border-box" oninput="window.refreshArgusOffers && window.refreshArgusOffers()">
+          </div>
+          <div>
+            <label style="display:block;font-family:var(--font-mono);font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Date</label>
+            <input type="date" id="argusDateInput" value="${new Date().toISOString().slice(0, 10)}" style="width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:11px;box-sizing:border-box">
+          </div>
+        </div>
+
+        <!-- Affichage côte à côte : Théorique vs Argus -->
+        <div id="argusComparisonBlock" style="display:none;background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:6px;padding:10px;margin-bottom:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:8px 4px;background:var(--bg-1);border-radius:4px">
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Cote théorique</div>
+              <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text-1)">${(r.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-3);margin-top:2px">grille LEASECAR</div>
+            </div>
+            <div style="text-align:center;padding:8px 4px;background:var(--bg-1);border:1px solid var(--hi-vis);border-radius:4px">
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--hi-vis);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Cote Argus</div>
+              <div id="argusValueDisplay" style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--hi-vis)">— €</div>
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--text-3);margin-top:2px">officielle Leboncoin</div>
+            </div>
+          </div>
+          <div id="argusDeltaDisplay" style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-2);text-align:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)"></div>
+        </div>
+
+        <!-- Offres pro calculées depuis Argus -->
+        <div id="argusOffersBlock" style="display:none">
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Offres pro basées sur Argus</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
+            <div style="text-align:center;padding:7px 3px;background:var(--bg-2);border:1px solid var(--signal-red);border-radius:4px">
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--signal-red);font-weight:700">LOW</div>
+              <div id="argusOfferLow" style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--signal-red);line-height:1.2">— €</div>
+              <div style="font-family:var(--font-mono);font-size:7.5px;color:var(--text-3)">${(state.settings && state.settings.argusRatioLow) || 80}%</div>
+            </div>
+            <div style="text-align:center;padding:7px 3px;background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:4px">
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--hi-vis);font-weight:700">RECOM</div>
+              <div id="argusOfferRecom" style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--hi-vis);line-height:1.2">— €</div>
+              <div style="font-family:var(--font-mono);font-size:7.5px;color:var(--text-3)">${(state.settings && state.settings.argusRatioRecom) || 85}%</div>
+            </div>
+            <div style="text-align:center;padding:7px 3px;background:var(--bg-2);border:1px solid var(--signal-green);border-radius:4px">
+              <div style="font-family:var(--font-mono);font-size:8px;color:var(--signal-green);font-weight:700">HIGH</div>
+              <div id="argusOfferHigh" style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--signal-green);line-height:1.2">— €</div>
+              <div style="font-family:var(--font-mono);font-size:7.5px;color:var(--text-3)">${(state.settings && state.settings.argusRatioHigh) || 90}%</div>
+            </div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:8.5px;color:var(--text-3);text-align:center;margin-top:6px;line-height:1.4">↓ LOW = rachat seul · → RECOM = avec achat VO · ↑ HIGH = ex-LEASECAR ou geste commercial</div>
+        </div>
+      </div>
+
       <div class="section" style="background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:8px;margin:14px 0;padding:14px">
         <div style="font-family:var(--font-mono);font-size:10px;color:var(--hi-vis);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;font-weight:700">💼 Proposition commerciale</div>
-        <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-1);line-height:1.6;margin-bottom:10px">
-          Transforme cette cote de reprise en proposition pour ton client : choisis un véhicule du stock VO.${r.plate ? `<br><span style="color:var(--hi-vis);font-weight:700">Reprise : ${r.brand} ${r.model} · ${r.plate}</span>` : ''}
+        <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-1);line-height:1.6;margin-bottom:12px">
+          Choisis le type de proposition pour ton client.${r.plate ? `<br><span style="color:var(--hi-vis);font-weight:700">Reprise : ${r.brand} ${r.model} · ${r.plate}</span>` : ''}
         </div>
-        <button onclick="window.openProposalFromAppraisal && window.openProposalFromAppraisal({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}'})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 CHOISIR UN VO ET CRÉER LA PROPOSITION</button>
+
+        <button onclick="window.openBuybackFromAppraisal && window.openBuybackFromAppraisal({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}',year:${r.year || 0},km:${r.km || 0}})" style="width:100%;padding:11px;background:var(--bg-2);border:1px solid var(--signal-red);color:var(--signal-red);border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">🤝 RACHAT SEUL (sans achat VO)</button>
+
+        <button onclick="window.openProposalFromAppraisalSmart && window.openProposalFromAppraisalSmart({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}'})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 AVEC ACHAT VO (choisir un véhicule)</button>
+
+        <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);line-height:1.5;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+          <strong style="color:var(--signal-red)">🤝 Rachat seul :</strong> hypothèse basse (${(r.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €), pas de financement.<br>
+          <strong style="color:var(--hi-vis)">🚗 Avec achat VO :</strong> hypothèse recommandée (${(r.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €) ajustable, simulation cash + financement.
+        </div>
       </div>
 
       <div class="actions-row">
@@ -7204,6 +7726,287 @@ function openProposalFromAppraisal(repriseData) {
   document.body.insertAdjacentHTML('beforeend', html);
 }
 window.openProposalFromAppraisal = openProposalFromAppraisal;
+
+// ============================================================
+// PROPOSITION DE RACHAT SEUL (sans achat VO en échange)
+// Affiche une modal légère avec montant LOW par défaut (hypothèse basse,
+// on minimise l'engagement financier puisque pas de vente VO derrière).
+// Le commercial peut toggler vers RECOM ou HIGH si nécessaire.
+// ============================================================
+window.__buybackOffer = null;
+
+function openBuybackOnlyProposal(data) {
+  // Normaliser les données reçues
+  const d = data || {};
+  window.__buybackOffer = {
+    plate: d.plate || '',
+    brand: d.brand || '',
+    model: d.model || '',
+    year: d.year || 0,
+    km: d.km || 0,
+    repriseLow: d.low || 0,
+    repriseRecom: d.recom || 0,
+    repriseHigh: d.high || 0,
+    amount: d.low || 0,  // Par défaut : LOW (rachat sans achat VO)
+    mode: 'low',
+    // Source des valeurs : 'argus' ou 'theoric'
+    sourceLabel: d.sourceLabel || 'Cote théorique',
+    argusValue: d.argusValue || 0,
+    argusDate: d.argusDate || '',
+  };
+  renderBuybackOnlyProposal();
+}
+window.openBuybackOnlyProposal = openBuybackOnlyProposal;
+
+function renderBuybackOnlyProposal() {
+  const o = window.__buybackOffer;
+  if (!o) return;
+  const t = getActiveTenant();
+  const dateStr = new Date().toLocaleDateString('fr-FR');
+  const validUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR');
+
+  const html = `
+    <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2200;overflow-y:auto;-webkit-overflow-scrolling:touch" id="buybackOnlyOverlay">
+      <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
+        <button onclick="document.getElementById('buybackOnlyOverlay').remove();window.__buybackOffer=null" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
+        <div style="flex:1">
+          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">🤝 Offre de rachat</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${o.brand} ${o.model}${o.plate ? ' · ' + o.plate : ''}</div>
+        </div>
+      </div>
+
+      <div style="padding:18px;background:var(--bg-0)">
+        <!-- Bandeau véhicule à racheter -->
+        <div style="background:var(--bg-1);border:1px solid var(--signal-red);border-radius:8px;padding:12px;margin-bottom:16px">
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--signal-red);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;font-weight:700">↩ Véhicule à racheter</div>
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--hi-vis);margin-bottom:4px">${o.brand} ${o.model}</div>
+          ${o.plate ? `<div style="display:inline-block;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--hi-vis);background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:4px;padding:2px 8px;margin-bottom:4px;letter-spacing:1.5px">${o.plate}</div>` : ''}
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);margin-top:4px">${o.year ? o.year + ' · ' : ''}${o.km ? o.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ') + ' km' : ''}</div>
+        </div>
+
+        <!-- Badge source -->
+        ${o.argusValue > 0 ? `
+          <div style="background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:5px;padding:8px 10px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--font-mono);font-size:8.5px;color:var(--hi-vis);letter-spacing:1px;text-transform:uppercase;font-weight:700">🅰️ Basé sur ${o.sourceLabel}</div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-2);margin-top:2px">Argus : ${o.argusValue.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €${o.argusDate ? ' · ' + fmtDateFr(o.argusDate) : ''}</div>
+            </div>
+          </div>
+        ` : `
+          <div style="background:var(--bg-2);border:1px dashed var(--line);border-radius:5px;padding:8px 10px;margin-bottom:12px">
+            <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.4">📊 Valeurs calculées par méthode théorique (grille LEASECAR). Pour basculer sur la Cote Argus officielle, saisis-la dans l'écran cote affinée.</div>
+          </div>
+        `}
+
+        <!-- Toggle hypothèse -->
+        ${(o.repriseLow > 0 || o.repriseRecom > 0 || o.repriseHigh > 0) ? `
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Hypothèse de rachat</div>
+          <div style="display:flex;gap:6px;margin-bottom:10px">
+            <button onclick="window.setBuybackMode && window.setBuybackMode('low')" style="flex:1;padding:10px 6px;background:${o.mode === 'low' ? 'var(--signal-red)' : 'var(--bg-2)'};color:${o.mode === 'low' ? '#fff' : 'var(--signal-red)'};border:1px solid var(--signal-red);border-radius:5px;font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.3px">LOW<br><span style="font-size:12px">${(o.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span></button>
+            <button onclick="window.setBuybackMode && window.setBuybackMode('recom')" style="flex:1;padding:10px 6px;background:${o.mode === 'recom' ? 'var(--hi-vis)' : 'var(--bg-2)'};color:${o.mode === 'recom' ? 'var(--bg-0)' : 'var(--hi-vis)'};border:1px solid var(--hi-vis);border-radius:5px;font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.3px">RECOM<br><span style="font-size:12px">${(o.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span></button>
+            <button onclick="window.setBuybackMode && window.setBuybackMode('high')" style="flex:1;padding:10px 6px;background:${o.mode === 'high' ? 'var(--signal-green)' : 'var(--bg-2)'};color:${o.mode === 'high' ? '#fff' : 'var(--signal-green)'};border:1px solid var(--signal-green);border-radius:5px;font-family:var(--font-mono);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:0.3px">HIGH<br><span style="font-size:12px">${(o.repriseHigh || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</span></button>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);margin-bottom:14px;line-height:1.4">${o.mode === 'low' ? '↓ Hypothèse basse · standard pour rachat seul (sans achat VO)' : o.mode === 'high' ? '↑ Hypothèse haute · geste commercial' : o.mode === 'recom' ? '→ Cote affinée standard' : '✏ Valeur saisie manuellement'}</div>
+        ` : ''}
+
+        <!-- Montant ajustable -->
+        <label style="display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Montant du rachat (€)</label>
+        <input id="buybackAmount" type="number" min="0" step="50" value="${o.amount}" oninput="window.updateBuybackAmount && window.updateBuybackAmount()" style="width:100%;padding:14px;background:var(--bg-2);border:1px solid var(--line);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:18px;font-weight:700;text-align:center;margin-bottom:16px;box-sizing:border-box">
+
+        <!-- Récap visuel -->
+        <div style="background:var(--bg-1);border:2px solid var(--signal-red);border-radius:10px;padding:16px;margin-bottom:18px;text-align:center">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--signal-red);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;font-weight:700">💰 Montant proposé au client</div>
+          <div style="font-family:var(--font-display);font-size:36px;font-weight:900;color:var(--signal-red);line-height:1">${(o.amount || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €</div>
+          <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);margin-top:8px;line-height:1.5">Offre valable jusqu'au ${validUntil}<br>Sous réserve d'expertise visuelle finale</div>
+        </div>
+
+        <!-- Actions -->
+        <button onclick="window.generateBuybackPdf && window.generateBuybackPdf()" class="btn-primary" style="width:100%;margin-bottom:8px">📄 Générer PDF de l'offre</button>
+        <button onclick="window.sendBuybackEmail && window.sendBuybackEmail()" style="width:100%;padding:13px;background:var(--bg-2);border:1px solid var(--hi-vis);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">📧 Envoyer par email</button>
+        <button onclick="document.getElementById('buybackOnlyOverlay').remove();window.__buybackOffer=null" class="btn-ghost" style="width:100%">Fermer</button>
+      </div>
+    </div>
+  `;
+  const existing = document.getElementById('buybackOnlyOverlay');
+  if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window.renderBuybackOnlyProposal = renderBuybackOnlyProposal;
+
+window.setBuybackMode = function(mode) {
+  const o = window.__buybackOffer;
+  if (!o) return;
+  if (mode === 'low') o.amount = o.repriseLow || 0;
+  else if (mode === 'recom') o.amount = o.repriseRecom || 0;
+  else if (mode === 'high') o.amount = o.repriseHigh || 0;
+  o.mode = mode;
+  renderBuybackOnlyProposal();
+};
+
+window.updateBuybackAmount = function() {
+  const o = window.__buybackOffer;
+  if (!o) return;
+  const newAmount = parseInt(document.getElementById('buybackAmount').value, 10) || 0;
+  // Détecter si ça correspond à un preset
+  if (newAmount === o.repriseLow) o.mode = 'low';
+  else if (newAmount === o.repriseRecom) o.mode = 'recom';
+  else if (newAmount === o.repriseHigh) o.mode = 'high';
+  else o.mode = 'custom';
+  o.amount = newAmount;
+  renderBuybackOnlyProposal();
+  // Restaurer focus
+  setTimeout(() => {
+    const el = document.getElementById('buybackAmount');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }, 50);
+};
+
+// PDF de l'offre de rachat seul (1 page A4)
+window.generateBuybackPdf = function() {
+  const o = window.__buybackOffer;
+  if (!o) return;
+  if (typeof window.jspdf === 'undefined') {
+    toast('PDF indisponible (lib non chargée)', 4000);
+    return;
+  }
+  const t = getActiveTenant();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const w = doc.internal.pageSize.getWidth();
+
+  // En-tête
+  doc.setFillColor(242, 101, 34);
+  doc.rect(0, 0, w, 22, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text(t.name.toUpperCase(), 14, 14);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Offre de rachat de véhicule', 14, 19);
+
+  // Date
+  doc.setTextColor(50, 50, 50);
+  doc.setFontSize(9);
+  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`, w - 14, 28, { align: 'right' });
+
+  let y = 38;
+
+  // Titre principal
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(30, 30, 30);
+  doc.text('OFFRE DE RACHAT', 14, y);
+  y += 8;
+
+  // Bloc véhicule
+  doc.setFillColor(245, 245, 245);
+  doc.rect(14, y, w - 28, 32, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(30, 30, 30);
+  doc.text(`${o.brand} ${o.model}`, 18, y + 9);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  const subParts = [];
+  if (o.year) subParts.push(String(o.year));
+  if (o.km) subParts.push(o.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ') + ' km');
+  doc.text(subParts.join(' · '), 18, y + 16);
+  if (o.plate) {
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Immatriculation : ${o.plate}`, 18, y + 23);
+  }
+  y += 40;
+
+  // Montant proposé (gros encart rouge)
+  doc.setDrawColor(220, 38, 38);
+  doc.setLineWidth(1);
+  doc.rect(14, y, w - 28, 32);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(120, 120, 120);
+  doc.text('MONTANT DU RACHAT PROPOSÉ', w / 2, y + 9, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(28);
+  doc.setTextColor(220, 38, 38);
+  doc.text(`${(o.amount || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €`, w / 2, y + 23, { align: 'center' });
+  y += 40;
+
+  // Conditions
+  doc.setTextColor(50, 50, 50);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Conditions de l\'offre', 14, y);
+  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(70, 70, 70);
+  const validUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR');
+  const conditions = [
+    `• Offre valable jusqu'au ${validUntil} (14 jours).`,
+    `• Sous réserve d'expertise visuelle finale du véhicule.`,
+    `• Sous réserve de présentation des documents : carte grise, contrôle technique de moins de 6 mois, certificat de non-gage.`,
+    `• Le véhicule doit être en état conforme à la description fournie (kilométrage, équipements, état général).`,
+    `• Paiement par virement bancaire sous 48h après signature de l'acte de vente.`,
+  ];
+  for (const c of conditions) {
+    doc.text(c, 14, y, { maxWidth: w - 28 });
+    y += 6;
+  }
+  y += 4;
+
+  // Mentions légales
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Document non contractuel. Le montant final peut être ajusté à la baisse en cas de découverte de défauts non signalés.', 14, y, { maxWidth: w - 28 });
+  y += 5;
+  doc.text(`${t.name}${t.fullName ? ' - ' + t.fullName : ''} - Édité avec MATCH! Scanner.`, 14, y, { maxWidth: w - 28 });
+
+  // Sauvegarde
+  const safeRefBrand = (o.brand || 'vehicule').replace(/[^a-zA-Z0-9]/g, '_');
+  const safeRefPlate = (o.plate || 'sans_plaque').replace(/[^a-zA-Z0-9]/g, '_');
+  const fileName = `Offre_rachat_${safeRefBrand}_${safeRefPlate}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  doc.save(fileName);
+  toast(`✓ PDF généré : ${fileName}`, 4000);
+};
+
+// Email de l'offre de rachat (mailto + PDF généré)
+window.sendBuybackEmail = function() {
+  const o = window.__buybackOffer;
+  if (!o) return;
+  const email = prompt('Email du client :', '');
+  if (!email) return;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    toast('Email invalide', 3000);
+    return;
+  }
+  const t = getActiveTenant();
+  const subject = `Offre de rachat · ${o.brand} ${o.model}${o.plate ? ' (' + o.plate + ')' : ''}`;
+  const validUntil = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR');
+
+  let body = `Bonjour,\n\n`;
+  body += `Suite à notre échange et à l'expertise de votre véhicule, voici notre offre de rachat :\n\n`;
+  body += `▸ Véhicule : ${o.brand} ${o.model}\n`;
+  if (o.plate) body += `▸ Immatriculation : ${o.plate}\n`;
+  if (o.year) body += `▸ Année : ${o.year}\n`;
+  if (o.km) body += `▸ Kilométrage : ${o.km.toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} km\n`;
+  body += `\n━━━ NOTRE OFFRE ━━━\n\n`;
+  body += `💰 Montant proposé : ${(o.amount || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €\n\n`;
+  body += `Cette offre est valable jusqu'au ${validUntil} (14 jours).\n`;
+  body += `Elle est subordonnée à une expertise visuelle finale et à la présentation des documents du véhicule.\n\n`;
+  body += `Le PDF détaillé de l'offre est joint à cet email.\n\n`;
+  body += `N'hésitez pas à me contacter pour toute question ou pour fixer un rendez-vous.\n\n`;
+  body += `Bien cordialement,\n${t.name}`;
+
+  const mailtoUrl = `mailto:${encodeURIComponent(email.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  // Générer le PDF d'abord
+  window.generateBuybackPdf();
+  setTimeout(() => {
+    window.location.href = mailtoUrl;
+    toast('✓ PDF téléchargé · email ouvert. Attache le PDF avant d\'envoyer.', 5000);
+  }, 500);
+};
 
 window.__pickVoForProposal = function(voId) {
   document.getElementById('voSelectOverlay').remove();
