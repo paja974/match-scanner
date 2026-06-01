@@ -3528,6 +3528,114 @@ function lookupPlate(plate, scanMeta = {}) {
 // On normalise et on cherche dans ADEME_DB. Si pas de match exact, on
 // essaie sur la marque seule + matching partiel sur le modèle (Captur,
 // captur 2, captur ii…).
+// ============================================================
+// PRÉ-REMPLISSAGE DU FLUX REPRISE depuis une fiche véhicule
+// ============================================================
+// Bascule vers l'écran Reprise (view-appraisal) avec les champs
+// marque/modèle/année/énergie/km/prix déjà remplis depuis le véhicule
+// identifié (ADEME, SIV, ou saisie manuelle).
+// L'utilisateur n'a plus qu'à affiner état + désirabilité puis calculer.
+function prefillAppraisal(data) {
+  const d = data || {};
+  // Basculer vers l'écran Reprise
+  switchView('appraisal');
+
+  // Donner le temps au DOM de rendre l'écran avant de remplir
+  setTimeout(() => {
+    // Plaque
+    if (d.plate) {
+      const plateEl = el('appraisalPlate');
+      if (plateEl) plateEl.value = d.plate;
+    }
+
+    // Marque (bouton + hidden input)
+    if (d.brand) {
+      const brandInput = el('ap_brand');
+      const brandBtn = el('ap_brandBtn');
+      if (brandInput) brandInput.value = d.brand;
+      if (brandBtn) {
+        const span = brandBtn.querySelector('span');
+        if (span) span.textContent = d.brand;
+      }
+      // Activer le bouton modèle (il est disabled par défaut)
+      const modelBtn = el('ap_modelBtn');
+      if (modelBtn) {
+        modelBtn.disabled = false;
+        modelBtn.style.opacity = '1';
+      }
+    }
+
+    // Modèle (bouton + hidden input)
+    if (d.model) {
+      const modelInput = el('ap_model');
+      const modelBtn = el('ap_modelBtn');
+      if (modelInput) modelInput.value = d.model;
+      if (modelBtn) {
+        const span = modelBtn.querySelector('span');
+        if (span) span.textContent = d.model;
+      }
+    }
+
+    // Énergie (bouton + hidden input)
+    if (d.energy) {
+      const energyInput = el('ap_energy');
+      const energyBtn = el('ap_energyBtn');
+      const energyNorm = (d.energy || '').toUpperCase();
+      if (energyInput) energyInput.value = energyNorm;
+      if (energyBtn) {
+        const span = energyBtn.querySelector('span');
+        const label = { ESSENCE: 'Essence', DIESEL: 'Diesel', HYBRIDE: 'Hybride', ELECTRIQUE: 'Électrique' }[energyNorm] || d.energy;
+        if (span) span.textContent = label;
+      }
+    }
+
+    // Année
+    if (d.year) {
+      const yearEl = el('ap_year');
+      if (yearEl) yearEl.value = d.year;
+    }
+
+    // Kilométrage
+    if (d.km) {
+      const kmEl = el('ap_km');
+      if (kmEl) kmEl.value = d.km;
+    }
+
+    // Prix neuf catalogue (depuis getPrice974 si non fourni)
+    let priceNew = d.priceNew;
+    if (!priceNew && d.brand && d.model && typeof getPrice974 === 'function') {
+      const p = getPrice974(d.brand, d.model, d.energy, null);
+      if (p && p.price) priceNew = p.price;
+    }
+    if (priceNew) {
+      const priceEl = el('ap_price');
+      if (priceEl) priceEl.value = priceNew;
+    }
+
+    // Scroller vers l'étape 2 (données véhicule) et toast de confirmation
+    const step2 = document.querySelector('#view-appraisal .section-title');
+    toast('✓ Champs pré-remplis · vérifie et affine l\'état du véhicule', 3500);
+
+    // Faire défiler doucement vers la zone des données véhicule
+    const apYear = el('ap_year');
+    if (apYear) {
+      apYear.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 200);
+}
+window.prefillAppraisal = prefillAppraisal;
+
+// Crée un prospect depuis la cote affinée (onglet Reprise)
+// Réutilise openProspectForm avec les données de l'estimation
+function createProspectFromAppraisal(data) {
+  if (typeof openProspectForm === 'function') {
+    openProspectForm(data);
+  } else {
+    toast('Formulaire prospect indisponible');
+  }
+}
+window.createProspectFromAppraisal = createProspectFromAppraisal;
+
 function lookupAdeme(makeModel) {
   if (!makeModel) return null;
   const key = makeModel.toLowerCase().trim();
@@ -3819,6 +3927,10 @@ function renderSivProspect(siv, scanMeta = {}) {
       <div class="section-title">Action commerciale</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
         <button class="btn-primary" style="background: var(--hi-vis); color: var(--bg-0)"
+          onclick='window.prefillAppraisal && window.prefillAppraisal(${JSON.stringify({plate:siv.plate,brand:siv.brand,model:siv.model,energy:siv.energy,year:siv.firstReg ? parseInt(siv.firstReg.split("/").pop()) : null,km:siv.age ? siv.age*15000 : null}).replace(/'/g,"\\'")})'>
+          🎯 Estimer la reprise
+        </button>
+        <button class="btn-ghost" style="border-color:var(--hi-vis);color:var(--hi-vis)"
           onclick='window.openProspectForm && window.openProspectForm(${JSON.stringify({plate:siv.plate,brand:siv.brand,model:siv.model,year:siv.firstReg ? siv.firstReg.split("/").pop() : ""}).replace(/'/g,"\\'")})'>
           📇 Créer fiche contact prospect
         </button>
@@ -3966,14 +4078,22 @@ function renderAdemeProspect(plate, ademe, scanMeta = {}) {
       </div>
 
       <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);line-height:1.5;padding:6px 8px">
-        Hypothèses : énergie ${a.energy} · ${a.durationMonths} mois · ${a.kmK}k km · état "bon" par défaut. Affine via le bouton ci-dessous pour saisir le vrai état + km.
+        Hypothèses : énergie ${a.energy} · ${a.durationMonths} mois · ${a.kmK}k km · état "bon" par défaut. Cote indicative — passe à l'estimation de reprise pour saisir le vrai état + km et affiner.
       </div>
     </div>
 
     <div class="section">
       <div class="section-title">Action</div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-        <button class="btn-primary" onclick="window.openAdemeRefine && window.openAdemeRefine('${plate}')">🎯 Affiner la cote (état + km réel)</button>
+        <button class="btn-primary" onclick='window.prefillAppraisal && window.prefillAppraisal(${JSON.stringify({
+          plate: plate,
+          brand: ademe.brand,
+          model: ademe.model,
+          energy: ademe.defaultEnergy,
+          year: ademe.estimatedYear || ademe.yearMax,
+          km: a.kmK * 1000,
+          priceNew: ademe.priceNew,
+        }).replace(/'/g,"\\'")})'>🎯 Estimer la reprise (affiner état + km)</button>
         <button class="btn-ghost" style="border-color:var(--hi-vis);color:var(--hi-vis)"
           onclick='window.openProspectForm && window.openProspectForm(${JSON.stringify({
             plate: plate,
@@ -3997,9 +4117,10 @@ function renderAdemeProspect(plate, ademe, scanMeta = {}) {
               repriseHigh: a.repriseHigh,
               coefficients: a.coefficients,
               source: "ADEME",
-            }
+            },
+            _noReprise: true
           }).replace(/'/g,"\\'")})'>
-          📇 Créer fiche contact prospect
+          📇 Créer prospect acheteur (sans reprise)
         </button>
       </div>
     </div>
@@ -5656,22 +5777,37 @@ function renderAppraisalResult(r) {
       <div class="section" style="background:var(--bg-2);border:1px solid var(--hi-vis);border-radius:8px;margin:14px 0;padding:14px">
         <div style="font-family:var(--font-mono);font-size:10px;color:var(--hi-vis);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;font-weight:700">💼 Proposition commerciale</div>
         <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-1);line-height:1.6;margin-bottom:12px">
-          Choisis le type de proposition pour ton client.${r.plate ? `<br><span style="color:var(--hi-vis);font-weight:700">Reprise : ${r.brand} ${r.model} · ${r.plate}</span>` : ''}
+          ${r.plate ? `<span style="color:var(--hi-vis);font-weight:700">Reprise : ${r.brand} ${r.model} · ${r.plate}</span><br>` : ''}1. Crée le prospect · 2. Choisis le type de proposition.
         </div>
+
+        <button onclick='window.createProspectFromAppraisal && window.createProspectFromAppraisal(${JSON.stringify({
+          plate: r.plate || '',
+          brand: r.brand || '',
+          model: r.model || '',
+          year: r.year || '',
+          estimation: {
+            priceNew: r.priceNew,
+            energy: r.energy,
+            ageYears: r.ageYears,
+            kmEstimated: r.km,
+            coteAffinee: r.coteAffinee,
+            repriseLow: r.repriseLow,
+            repriseRecom: r.repriseRecom,
+            repriseHigh: r.repriseHigh,
+            source: "REPRISE",
+          }
+        }).replace(/'/g,"\\'")})' style="width:100%;padding:11px;background:var(--bg-1);border:1px solid var(--hi-vis);color:var(--hi-vis);border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:10px">📇 CRÉER LE PROSPECT</button>
+
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-top:6px;border-top:1px dashed var(--line)">Puis générer la proposition</div>
 
         <button onclick="window.openBuybackFromAppraisal && window.openBuybackFromAppraisal({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}',year:${r.year || 0},km:${r.km || 0}})" style="width:100%;padding:11px;background:var(--bg-2);border:1px solid var(--signal-red);color:var(--signal-red);border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">🤝 RACHAT SEUL (sans achat VO)</button>
 
-        <button onclick="window.openProposalFromAppraisalSmart && window.openProposalFromAppraisalSmart({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}'})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 AVEC ACHAT VO (choisir un véhicule)</button>
+        <button onclick="window.openProposalFromAppraisalSmart && window.openProposalFromAppraisalSmart({recom:${r.repriseRecom},low:${r.repriseLow},high:${r.repriseHigh},plate:'${r.plate || ''}',brand:'${(r.brand||'').replace(/'/g,'\\\'')}',model:'${(r.model||'').replace(/'/g,'\\\'')}'})" style="width:100%;padding:11px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px">🚗 RACHAT + VENTE VO (choisir un véhicule)</button>
 
         <div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);line-height:1.5;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
           <strong style="color:var(--signal-red)">🤝 Rachat seul :</strong> hypothèse basse (${(r.repriseLow || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €), pas de financement.<br>
-          <strong style="color:var(--hi-vis)">🚗 Avec achat VO :</strong> hypothèse recommandée (${(r.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €) ajustable, simulation cash + financement.
+          <strong style="color:var(--hi-vis)">🚗 Rachat + vente VO :</strong> hypothèse recommandée (${(r.repriseRecom || 0).toLocaleString('fr-FR').replace(/\u202F|\u00A0/g, ' ')} €) ajustable, simulation cash + financement.
         </div>
-      </div>
-
-      <div class="actions-row">
-        <button class="btn-ghost" onclick="window.toast && window.toast('Export PDF — à brancher sur backend')">📄 Exporter PDF</button>
-        <button class="btn-ghost" onclick="window.toast && window.toast('Envoyé au client (démo)')">📧 Envoyer par mail</button>
       </div>
     </div>
   `;
@@ -6139,14 +6275,103 @@ function confirmProspectAndSign() {
 
   toast(`✓ Fiche signée et enregistrée · ${p.lastName} (${list.length} au total)`, 3500);
 
-  // Proposer immédiatement de générer le PDF
+  // Cas spécial : si on créait ce prospect depuis "Proposition commerciale" (Stock VO),
+  // on revient directement à la proposition avec le prospect rattaché.
+  if (window.__pendingVoProposalAfterProspect) {
+    const voId = window.__pendingVoProposalAfterProspect;
+    delete window.__pendingVoProposalAfterProspect;
+    setTimeout(() => {
+      if (window.__pickProspectForVoProposal) {
+        window.__pickProspectForVoProposal(voId, p.id);
+      }
+    }, 500);
+    return;
+  }
+
+  // Modal de choix d'actions post-création
   setTimeout(() => {
-    if (confirm(`Fiche enregistrée ✓\n\nGénérer le PDF signé maintenant ?`)) {
-      generateProspectPdf(p.id);
-    }
+    showPostProspectActions(p.id);
   }, 500);
 }
 window.confirmProspectAndSign = confirmProspectAndSign;
+
+// Modal d'actions après création d'un prospect :
+// - Envoyer la proposition par mail (rachat / vente)
+// - Générer le PDF de la fiche signée
+// - Terminer
+function showPostProspectActions(prospectId) {
+  const p = loadProspects().find(x => x.id === prospectId);
+  if (!p) return;
+  const est = p.estimation || {};
+  const hasReprise = est && (est.repriseRecom > 0 || est.repriseLow > 0);
+
+  const html = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2400;display:grid;place-items:center;padding:20px" id="postProspectOverlay" onclick="if(event.target.id==='postProspectOverlay')this.remove()">
+      <div style="background:var(--bg-1);border:1px solid var(--hi-vis);border-radius:12px;padding:22px;max-width:400px;width:100%">
+        <div style="text-align:center;margin-bottom:18px">
+          <div style="font-size:32px;margin-bottom:6px">✓</div>
+          <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">Prospect créé</div>
+          <div style="font-family:var(--font-mono);font-size:12px;color:var(--text-1);margin-top:4px">${p.firstName || ''} ${p.lastName}</div>
+          ${p.vehicle ? `<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3);margin-top:2px">🚗 ${p.vehicle.brand} ${p.vehicle.model}${p.vehicle.plate ? ' · ' + p.vehicle.plate : ''}</div>` : ''}
+        </div>
+
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Que veux-tu faire maintenant ?</div>
+
+        ${hasReprise ? `
+          <button onclick="window.sendProspalFromProspect && window.sendProspalFromProspect('${p.id}','buyback')" style="width:100%;padding:12px;background:var(--bg-2);border:1px solid var(--signal-red);color:var(--signal-red);border-radius:8px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">🤝 Proposition de rachat par mail</button>
+        ` : ''}
+
+        <button onclick="window.proposeVoToProspect && window.proposeVoToProspect('${p.id}')" style="width:100%;padding:12px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:8px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">🚗 Proposer un VO à la vente</button>
+
+        <button onclick="window.generateProspectPdf && window.generateProspectPdf('${p.id}'); document.getElementById('postProspectOverlay').remove();" style="width:100%;padding:11px;background:var(--bg-2);border:1px solid var(--line);color:var(--text-1);border-radius:8px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">📄 Générer le PDF de la fiche signée</button>
+
+        <button onclick="document.getElementById('postProspectOverlay').remove()" style="width:100%;padding:10px;background:none;border:none;color:var(--text-3);font-family:var(--font-mono);font-size:11px;cursor:pointer">Terminer</button>
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window.showPostProspectActions = showPostProspectActions;
+
+// Envoie la proposition de rachat par mail directement depuis un prospect
+window.sendProspalFromProspect = function(prospectId, type) {
+  const p = loadProspects().find(x => x.id === prospectId);
+  if (!p) { toast('Prospect introuvable'); return; }
+  const est = p.estimation || {};
+  const v = p.vehicle || {};
+  document.getElementById('postProspectOverlay').remove();
+
+  if (type === 'buyback') {
+    // Ouvrir la modal de rachat seul, pré-remplie depuis l'estimation du prospect
+    if (typeof openBuybackOnlyProposal === 'function') {
+      openBuybackOnlyProposal({
+        plate: v.plate || '',
+        brand: v.brand || '',
+        model: v.model || '',
+        year: v.year || 0,
+        km: est.kmEstimated || 0,
+        low: est.repriseLow || 0,
+        recom: est.repriseRecom || 0,
+        high: est.repriseHigh || 0,
+        argusValue: est.argusValue || 0,
+        argusDate: est.argusDate || '',
+        sourceLabel: est.argusValue ? 'Cote Argus officielle' : 'Cote théorique',
+        prospectEmail: p.email || '',
+      });
+    }
+  }
+};
+
+// Ouvre le sélecteur de VO pour proposer une vente à ce prospect
+window.proposeVoToProspect = function(prospectId) {
+  const overlay = document.getElementById('postProspectOverlay');
+  if (overlay) overlay.remove();
+  if (typeof window.openProposeVoToProspect === 'function') {
+    window.openProposeVoToProspect(prospectId);
+  } else {
+    toast('Sélecteur VO indisponible');
+  }
+};
 
 // ============================================================
 // Liste & gestion des prospects sauvegardés
@@ -6372,7 +6597,10 @@ window.__pickVoForProspect = function(voId) {
 window.sendProposalEmail = function() {
   const p = window.__voProposal;
   if (!p || !p.prospectId) {
-    toast('Aucun prospect lié à cette proposition');
+    // Mode calcul rapide : proposer de rattacher un client maintenant
+    if (confirm('Aucun client rattaché à cette proposition.\n\nRattacher un client maintenant pour pouvoir envoyer ?')) {
+      if (window.__attachClientToProposal) window.__attachClientToProposal();
+    }
     return;
   }
   const prospect = loadProspects().find(x => x.id === p.prospectId);
@@ -7673,12 +7901,122 @@ window.saveVoVehicle = saveVoVehicle;
 function openVoProposal(voId) {
   const v = loadVoInventory().find(x => x.id === voId);
   if (!v) { toast('Véhicule introuvable'); return; }
-  const taeg = (state.settings && state.settings.taeg) || 6.0;
-  // État local (reprise, apport, durée)
-  window.__voProposal = { vehicleId: voId, reprise: 0, apport: 0, duration: 36, taeg };
-  renderVoProposal();
+  // Étape préalable : pour qui est cette proposition ?
+  openProposalClientPicker(voId);
 }
 window.openVoProposal = openVoProposal;
+
+// Étape "Pour qui ?" : choisir un prospect existant, en créer un, ou juste calculer
+function openProposalClientPicker(voId) {
+  const v = loadVoInventory().find(x => x.id === voId);
+  if (!v) { toast('Véhicule introuvable'); return; }
+  const prospects = loadProspects();
+
+  const prospectListHtml = prospects.length > 0
+    ? prospects.slice(0, 30).map(p => {
+        const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.company || 'Sans nom';
+        const sub = [p.company && p.company !== name ? p.company : '', p.phone || '', p.email || ''].filter(Boolean).join(' · ');
+        return `
+          <div onclick="window.__pickProspectForVoProposal('${voId}','${p.id}')" style="cursor:pointer;background:var(--bg-1);border:1px solid var(--line);border-radius:8px;padding:11px 12px;margin-bottom:6px;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--hi-vis)'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--hi-vis)">${name}</div>
+            ${sub ? `<div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);margin-top:2px">${sub}</div>` : ''}
+          </div>`;
+      }).join('')
+    : `<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);text-align:center;padding:16px;line-height:1.5">Aucun prospect enregistré pour l'instant.<br>Crée-en un ou fais un calcul rapide.</div>`;
+
+  const html = `
+    <div style="position:fixed;inset:0;background:var(--bg-0);z-index:2200;overflow-y:auto;-webkit-overflow-scrolling:touch" id="proposalClientPickerOverlay">
+      <div style="padding:14px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5">
+        <button onclick="document.getElementById('proposalClientPickerOverlay').remove()" style="background:none;border:none;color:var(--hi-vis);font-size:24px;cursor:pointer;padding:0;line-height:1">✕</button>
+        <div style="flex:1">
+          <div style="font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--hi-vis);text-transform:uppercase;letter-spacing:1px">Proposition commerciale</div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${v.brand} ${v.model}${v.plate ? ' · ' + v.plate : ''}</div>
+        </div>
+      </div>
+
+      <div style="padding:18px;background:var(--bg-0)">
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-1);letter-spacing:0.5px;margin-bottom:14px;line-height:1.5">Pour qui est cette proposition ?</div>
+
+        <button onclick="window.__newProspectForVoProposal('${voId}')" style="width:100%;padding:12px;background:var(--hi-vis);color:var(--bg-0);border:none;border-radius:8px;font-family:var(--font-mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:8px">➕ Nouveau prospect</button>
+
+        <button onclick="window.__calcOnlyVoProposal('${voId}')" style="width:100%;padding:11px;background:var(--bg-2);border:1px dashed var(--hi-vis);color:var(--hi-vis);border-radius:8px;font-family:var(--font-mono);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;margin-bottom:16px">👁 Juste calculer (sans client)</button>
+
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;padding-top:8px;border-top:1px dashed var(--line)">Ou choisir un prospect existant</div>
+
+        ${prospectListHtml}
+      </div>
+    </div>
+  `;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window.openProposalClientPicker = openProposalClientPicker;
+
+// Prospect existant choisi → ouvrir la proposition avec ce prospect rattaché
+window.__pickProspectForVoProposal = function(voId, prospectId) {
+  const prospect = loadProspects().find(p => p.id === prospectId);
+  const overlay = document.getElementById('proposalClientPickerOverlay');
+  if (overlay) overlay.remove();
+  const taeg = (state.settings && state.settings.taeg) || 6.0;
+  // Récupérer la reprise du prospect si dispo
+  const est = (prospect && prospect.estimation) || {};
+  const vehProspect = (prospect && prospect.vehicle) || {};
+  window.__voProposal = {
+    vehicleId: voId,
+    reprise: est.repriseRecom || 0,
+    repriseLow: est.repriseLow || 0,
+    repriseRecom: est.repriseRecom || 0,
+    repriseHigh: est.repriseHigh || 0,
+    repriseMode: 'recom',
+    repriseVehiclePlate: vehProspect.plate || '',
+    repriseVehicleBrand: vehProspect.brand || '',
+    repriseVehicleModel: vehProspect.model || '',
+    apport: 0,
+    duration: 36,
+    taeg,
+    prospectId: prospectId,
+  };
+  renderVoProposal();
+};
+
+// Nouveau prospect → ouvrir le formulaire, puis revenir à la proposition
+window.__newProspectForVoProposal = function(voId) {
+  const overlay = document.getElementById('proposalClientPickerOverlay');
+  if (overlay) overlay.remove();
+  const v = loadVoInventory().find(x => x.id === voId);
+  // Mémoriser le VO pour rattacher la proposition après création du prospect
+  window.__pendingVoProposalAfterProspect = voId;
+  // Ouvrir le formulaire prospect SANS véhicule reprise (c'est un acheteur)
+  if (typeof openProspectForm === 'function') {
+    openProspectForm({
+      plate: '',
+      brand: '',
+      model: '',
+      year: '',
+      _fromVoProposal: true,
+      _voId: voId,
+    });
+  }
+};
+
+// Juste calculer (sans client) → proposition anonyme
+window.__calcOnlyVoProposal = function(voId) {
+  const overlay = document.getElementById('proposalClientPickerOverlay');
+  if (overlay) overlay.remove();
+  const taeg = (state.settings && state.settings.taeg) || 6.0;
+  window.__voProposal = { vehicleId: voId, reprise: 0, apport: 0, duration: 36, taeg, prospectId: null, _calcOnly: true };
+  renderVoProposal();
+};
+
+// Depuis une proposition en mode calcul rapide, rattacher un client a posteriori
+window.__attachClientToProposal = function() {
+  const p = window.__voProposal;
+  if (!p) return;
+  const voId = p.vehicleId;
+  // Fermer la proposition et rouvrir le sélecteur de client
+  const overlay = document.getElementById('voProposalOverlay');
+  if (overlay) overlay.remove();
+  openProposalClientPicker(voId);
+};
 
 // Ouverture depuis la cote de reprise : on demande au commercial de choisir le VO
 // puis on ouvre directement la proposition avec la reprise pré-remplie.
@@ -7753,6 +8091,7 @@ function openBuybackOnlyProposal(data) {
     sourceLabel: d.sourceLabel || 'Cote théorique',
     argusValue: d.argusValue || 0,
     argusDate: d.argusDate || '',
+    prospectEmail: d.prospectEmail || '',
   };
   renderBuybackOnlyProposal();
 }
@@ -7974,7 +8313,7 @@ window.generateBuybackPdf = function() {
 window.sendBuybackEmail = function() {
   const o = window.__buybackOffer;
   if (!o) return;
-  const email = prompt('Email du client :', '');
+  const email = prompt('Email du client :', o.prospectEmail || '');
   if (!email) return;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     toast('Email invalide', 3000);
@@ -8038,6 +8377,11 @@ function renderVoProposal() {
   if (!p) return;
   const v = loadVoInventory().find(x => x.id === p.vehicleId);
   if (!v) return;
+  // Récupérer le prospect destinataire (si rattaché)
+  const destProspect = p.prospectId ? loadProspects().find(x => x.id === p.prospectId) : null;
+  const destName = destProspect
+    ? (`${destProspect.firstName || ''} ${destProspect.lastName || ''}`.trim() || destProspect.company || 'Prospect')
+    : null;
   const taeg = p.taeg;
   const priceTtc = v.price || 0;
   const carteGrise = v.carteGrise || 0;
@@ -8060,6 +8404,19 @@ function renderVoProposal() {
           <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-3)">${v.brand} ${v.model} ${v.year || ''}${v.plate ? ' · ' + v.plate : ''}</div>
         </div>
       </div>
+
+      ${destName ? `
+        <div style="padding:8px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px">Pour</span>
+          <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--signal-green)">📇 ${destName}</span>
+          ${destProspect && destProspect.email ? `<span style="font-family:var(--font-mono);font-size:9px;color:var(--text-3)">· ${destProspect.email}</span>` : ''}
+        </div>
+      ` : `
+        <div style="padding:8px 18px;background:var(--bg-1);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span style="font-family:var(--font-mono);font-size:10px;color:#f59e0b">👁 Calcul rapide · sans client rattaché</span>
+          <button onclick="window.__attachClientToProposal && window.__attachClientToProposal()" style="padding:4px 10px;background:var(--bg-2);border:1px solid var(--hi-vis);color:var(--hi-vis);border-radius:4px;font-family:var(--font-mono);font-size:9px;font-weight:700;cursor:pointer">+ Rattacher un client</button>
+        </div>
+      `}
 
       <div style="padding:18px;background:var(--bg-0)">
         <!-- Bandeau véhicule -->
